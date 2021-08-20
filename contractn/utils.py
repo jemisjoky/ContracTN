@@ -17,4 +17,6 @@ def put_in_params(tensor, params):
     id_list = [id(t) for t in params]
     if id(tensor) not in id_list:
         params.append(tensor)
-    return id_list.index(id(tensor))
+        return len(id_list)
+    else:
+        return id_list.index(id(tensor))

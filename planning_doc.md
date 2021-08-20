@@ -35,4 +35,10 @@ Note that it would be nice to have each node of the TNet be associated with a pa
 
 * How exactly are copy tensors handled? I could either treat them as regular cores, but with special logic that handles the conversion to an einsum string, or disregard them and just allow edges to connect to multiple nodes. For NetworkX, the former might make more sense.
 
+  * What if we just treat copy tensors as standard nodes relative to networkx, but add an attribute saying what type of node we are working with? In this way of viewing TNs, our graphs will always be bipartite between copy nodes and dense (or related) nodes. This can later be packed into an einsum expression pretty easily, where copy tensors give the indices/variables of the einstring and the dense tensors give the terms and operands of the einsum.
+
+  * On second thought, let's leave that as optional. I'll have a label indicating whether a node is a copy tensor or a dense tensor (or whatever), but am not going to force the graph to always be bipartite. If needed, I can always add in a function which "biparticizes" an existing graph by (a) adding in order-2 copy tensors on all dense-dense edges, (b) merging any copy tensors which are connected together.
+
+  * This biparticized representation could actually be useful for generating the einsum expression, since it is immediate from the two families of nodes (top+bottom, or equivalently variable/core) and the neighbors of each core node.
+
 * What type of graphical structure are we using to represent the TN? I mean this in the sense of how we interface with NetworkX, since it has different classes (?) for defining directed vs. undirected graphs, multigraphs vs. proper graphs, etc. This is related to the question above about copy tensors.

@@ -1,13 +1,13 @@
 import numpy as np
 from hypothesis import given, strategies as st
 
-from ..ctn import CTN
+from ..ctn import TN
 from ..utils import put_in_params
 
 @given(st.integers(0, 4), st.booleans(), st.booleans())
 def test_add_node(order, use_name, use_index_names):
     """Add dense core tensor and verify things look good"""
-    tn = CTN()
+    tn = TN()
     tensor = np.ones((2,) * order)
     name = "boring_core" if use_name else None
     index_names = list(range(order)) if use_index_names else None
@@ -34,7 +34,7 @@ def test_add_node(order, use_name, use_index_names):
 @given(st.integers(0, 2), st.booleans(), st.booleans(), st.booleans())
 def test_add_copy_node(order, use_dim, use_name, use_index_names):
     """Add copy tensor node and verify things look good"""
-    tn = CTN()
+    tn = TN()
     dimension = 2 if use_dim else None
     name = "boring_copy_node" if use_name else None
     index_names = list(range(order)) if use_index_names else None

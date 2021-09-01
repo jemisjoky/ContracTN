@@ -4,9 +4,9 @@ import opt_einsum as oe
 from .utils import assert_valid_tensor, put_in_params
 
 
-class CTN:
+class TN:
     """
-    Base class for generic tensor networks
+    Generic tensor networks which supports copy nodes and weight sharing
     """
 
     def __init__(self):
@@ -73,6 +73,10 @@ class CTN:
         Returns the number of core tensor nodes in the tensor network
         """
         return len([n for n, d in self.G.nodes(data=True) if d["copy"]])
+
+    @property
+    def params(self):
+        return tuple(self._params)
 
     @property
     def nodes(self):

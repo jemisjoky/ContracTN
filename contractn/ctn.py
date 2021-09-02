@@ -1,7 +1,8 @@
 import networkx as nx
 import opt_einsum as oe
 
-from .utils import assert_valid_tensor, put_in_params
+from .utils import assert_valid_tensor
+from .nodes import Node
 
 
 class TN:
@@ -11,73 +12,93 @@ class TN:
 
     def __init__(self):
         self.G = nx.Graph()
-        self._params = []
+        self.dict = {"num_dangs": 0}
 
-    def add_node(self, tensor, name=None, index_names=None):
+    def _node_append(self, node_type, name, degree, edge_symbols, **kwargs):
         """
-        Add a single dense core tensor to the tensor network
-        """
-        assert_valid_tensor(tensor)
+        Create a new unconnected Node object and add it to the tensor network
 
-        # Make up a node name if none is given
+        This entails adding several Nodes, one for the Node we actually care
+        about, and one dangler for each edge of the Node we care about
+        """
+        # Check that the name isn't currently used, create node in NX
+        name = self.new_node_name(name)
+        self.G.add_node(name)
+
+        # Create the corresponding Node object
+        node = Node(self, node_type, name, edge_symbols, **kwargs)
+
+        return node
+
+    def add_dense_node(self, tensor, edge_symbols=None, name=None):
+        """
+        Add a single dense node to the tensor network
+        """
+        pass
+
+    def add_clone_node(self, base_node, edge_symbols=None, name=None):
+        """
+        Add a single clone (shared) node to the tensor network
+        """
+        pass
+
+    def add_hyperedge_node(self, order, dimension=None, edge_symbols=None, name=None):
+        """
+        Add a single hyperedge (copy) node to the tensor network
+        """
+        pass
+
+    def new_node_name(self, name=None):
+        """
+        Create new unused name for node, or check that proposed name is unused
+        """
         if name is None:
             name = f"node_{self.num_cores}"
-        assert name not in self.G, f"Node name '{name}' already in use in network"
-
-        # Make up index names if none are given
-        if index_names is None:
-            index_names = [f"idx_{i}" for i in range(tensor.ndim)]
-        assert hasattr(index_names, "__len__"), "index_names must be sequence of names"
-        assert (
-            len(index_names) == tensor.ndim
-        ), f"{len(index_names)} given in index_names, but tensor has {tensor.ndim} indices"
-
-        # Add tensor to params, return index in where core tensor was added
-        tid = put_in_params(tensor, self._params)
-
-        self.G.add_node(name, tid=tid, index_names=index_names, pipeline=None, copy=False)
-
+        if self.G.has_node(name):
+            raise TypeError(f"Node name '{name}' already in use")
         return name
 
-    def add_copy_node(self, order, dimension=None, name=None, index_names=None, symbol=None):
+    @property
+    def num_dense(self):
         """
-        Add a single copy tensor node to the tensor network
+        Returns the number of dense nodes in the tensor network
         """
-        # Make up a node name if none is given
-        if name is None:
-            name = f"copy_node_{self.num_cores}"
-        assert name not in self.G, f"Node name '{name}' already in use in network"
+        return len([n for n, d in self.G.nodes.data() if d["type"] == "dense"])
 
-        # Make up index names if none are given
-        if index_names is None:
-            index_names = [f"idx_{i}" for i in range(order)]
-        assert hasattr(index_names, "__len__"), "index_names must be sequence of names"
-        assert (
-            len(index_names) == order
-        ), f"{len(index_names)} given in index_names, but copy node has {order} indices"
+    @property
+    def num_clone(self):
+        """
+        Returns the number of clone nodes in the tensor network
+        """
+        return len([n for n, d in self.G.nodes.data() if d["type"] == "clone"])
 
-        self.G.add_node(name, order=order, dimension=dimension, index_names=index_names, symbol=None, copy=True)
+    @property
+    def num_hyper(self):
+        """
+        Returns the number of hyperedge nodes in the tensor network
+        """
+        return len([n for n, d in self.G.nodes.data() if d["type"] == "hyper"])
 
-        return name
+    @property
+    def num_input(self):
+        """
+        Returns the number of input nodes in the tensor network
+        """
+        return len([n for n, d in self.G.nodes.data() if d["type"] == "input"])
 
     @property
     def num_cores(self):
         """
-        Returns the number of core tensors in the tensor network
+        Returns the total number of nodes in the tensor network
+
+        This does not include "dangling" nodes in the count, which are just
+        placeholders used to indicate uncontracted edges of the network.
         """
-        return len([n for n, d in self.G.nodes(data=True) if not d["copy"]])
+        return len([n for n, d in self.G.nodes.data() if d["type"] != "dangler"])
 
     @property
-    def num_copy_nodes(self):
+    def num_dangs(self):
         """
-        Returns the number of core tensor nodes in the tensor network
+        Returns the number of placeholder dangling nodes in the TN
         """
-        return len([n for n, d in self.G.nodes(data=True) if d["copy"]])
-
-    @property
-    def params(self):
-        return tuple(self._params)
-
-    @property
-    def nodes(self):
-        return self.G.nodes
+        return self.dict["num_dangs"]

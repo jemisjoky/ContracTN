@@ -1,7 +1,5 @@
 """Miscellaneous helper functions"""
 
-import networkx as nx
-
 
 def assert_valid_tensor(tensor):
     """
@@ -9,6 +7,15 @@ def assert_valid_tensor(tensor):
     """
     assert hasattr(tensor, "ndim")
     assert hasattr(tensor, "shape")
+
+
+def assert_valid_symbol(symbol):
+    """
+    Check if a user-specified symbol is a valid symbol
+    """
+    assert isinstance(symbol, str)
+    assert len(symbol) == 1
+
 
 def put_in_params(tensor, params):
     """

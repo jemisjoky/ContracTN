@@ -4,6 +4,7 @@ from hypothesis import given, strategies as st
 from ..ctn import TN
 from ..utils import put_in_params
 
+
 @given(st.integers(0, 4), st.booleans(), st.booleans())
 def test_add_node(order, use_name, use_index_names):
     """Add dense core tensor and verify things look good"""
@@ -31,6 +32,7 @@ def test_add_node(order, use_name, use_index_names):
     assert tn.nodes[name_out]["tid"] == 0
     assert len(tn._params) == 1
 
+
 @given(st.integers(0, 2), st.booleans(), st.booleans(), st.booleans())
 def test_add_copy_node(order, use_dim, use_name, use_index_names):
     """Add copy tensor node and verify things look good"""
@@ -39,7 +41,9 @@ def test_add_copy_node(order, use_dim, use_name, use_index_names):
     name = "boring_copy_node" if use_name else None
     index_names = list(range(order)) if use_index_names else None
 
-    name_out = tn.add_copy_node(order, dimension=dimension, name=name, index_names=index_names)
+    name_out = tn.add_copy_node(
+        order, dimension=dimension, name=name, index_names=index_names
+    )
 
     assert tn.nodes[name_out]["copy"]
     assert tn.nodes[name_out]["symbol"] is None

@@ -1,8 +1,8 @@
 from math import prod
 
-import networkx as nx
+# import networkx as nx
 
-from .utils import assert_valid_tensor
+from .utils import assert_valid_symbol
 
 # Collection of node types which are currently supported
 NODE_TYPES = ("dense", "clone", "hyper", "input", "dangler")
@@ -36,17 +36,17 @@ class Node:
     Generic node of a TN, which wraps the corresponding node in NetworkX
     """
 
-    def __init__(self, G, node_type, nx_name, edges, **kwargs):
+    def __init__(self, G, node_type, nx_name, edge_symbols, **kwargs):
         check_node_args(node_type, kwargs)
-        assert isinstance(name, str)
         assert nx_name in G
+        self.G = G
         self.type = node_type
         self.name = nx_name
-        self.dict = nx_dict
-        # List of NX edges needed to order edges (they're unordered in NX)
-        self.edges = edges
-        self.G = G
-        n_edges = len(edges)
+        self.dict = G.nodes[self.name]
+
+        # List of NX edges is needed to order edges (they're unordered in NX)
+        self.edges = edge_symbols
+        n_edges = len(self.edges)
 
         if node_type == "dense":
             self.tensor = kwargs["tensor"]
@@ -66,11 +66,15 @@ class Node:
                 assert n_edges == self.order
 
         elif node_type == "input":
-            self.shape = kwargs["shape"]
-            assert n_edges == len(self.shape)
+            self._shape = kwargs["shape"]
+            self.symbol = kwargs["symbol"]
+            assert_valid_symbol(self.symbol)
+            assert n_edges == len(self._shape)
+            assert all(s == self.symbol for s in edge_symbols)
 
         elif node_type == "dangler":
-            pass
+            self.symbol = kwargs["symbol"]
+            assert_valid_symbol(self.symbol)
 
         # Make pointer to the Node accessible in networkx node dictionary
         self.dict["tn_node"] = self
@@ -87,12 +91,43 @@ class Node:
         """
         Number of elements in the tensor associated with the Node
 
-        Returns 0 for any node types besides dense
+        Returns None for Nodes whose underlying tensors don't yet have a
+        definite shape. For the literal number of tensor elements stored in
+        memory, use Node.numel.
+        """
+        if self.type in ("dense", "clone", "hyper", "input"):
+            bad_shape = self.shape is None or any(d < 0 for d in self.shape)
+            return None if bad_shape else prod(self.shape)
+
+    @property
+    def numel(self):
+        """
+        Number of elements stored in memory for the tensor associated with Node
+
+        Similar to Node.size, but returns 0 for any node types besides dense
         """
         if self.type == "dense":
             return prod(self.tensor.shape)
         else:
             return 0
+
+    @property
+    def shape(self):
+        """
+        Shape of the tensor associated with the node
+
+        Values of -1 in the shape tuple indicate an undertermined dimension
+        """
+        if self.type == "dense":
+            return self.tensor.shape
+        elif self.type == "clone":
+            return self.base.tensor.shape
+        elif self.type == "hyper":
+            return (-1 if self.dim is None else self.dim,) * self.order
+        elif self.type == "input":
+            return self._shape
+        elif self.type == "dangler":
+            return None  # TODO: Return something more sensible here
 
 
 def check_node_args(node_type, kwdict):

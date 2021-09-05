@@ -1,8 +1,9 @@
 import networkx as nx
 import opt_einsum as oe
 
-from .utils import assert_valid_tensor
 from .nodes import Node
+from .edges import Edge
+from .utils import assert_valid_tensor, get_new_symbols
 
 
 class TN:
@@ -12,23 +13,61 @@ class TN:
 
     def __init__(self):
         self.G = nx.Graph()
-        self.dict = {"num_dangs": 0}
+        self._dang_id = 0
 
-    def _node_append(self, node_type, name, degree, edge_symbols, **kwargs):
+    def _node_append(self, node_type, name, edge_symbols, **kwargs):
         """
         Create a new unconnected Node object and add it to the tensor network
 
         This entails adding several Nodes, one for the Node we actually care
-        about, and one dangler for each edge of the Node we care about
+        about, and one dangling node for each edge of the Node we care about.
+
+        Returns an error if used to create a dangling node
         """
         # Check that the name isn't currently used, create node in NX
         name = self.new_node_name(name)
+        assert node_type != "dangler"
         self.G.add_node(name)
 
-        # Create the corresponding Node object
+        # Create the Node object of interest
         node = Node(self, node_type, name, edge_symbols, **kwargs)
 
+        # Create the dangling nodes
+        assert len(edge_symbols) == len(node.shape)
+        for s, d in zip(edge_symbols, node.shape):
+            self._new_dangler(node, d, s)
+
         return node
+
+        def _new_dangler(self, parent, dim, edge_symbol):
+            """
+            Add a dangler node connected to a non-dangler parent node
+            """
+            # Add the node to NX
+            nx_id = self._dang_id
+            assert nx_id not in self.G
+            assert parent.name in self.G
+            self.add_node(nx_id)
+            self._dang_id += 1
+
+            # Create Node object, which is added to NX dangler node
+            node = Node(self, "dangler", nx_id, (edge_symbol,))
+
+            # Create an edge between dangler and parent node
+            self._new_edge(parent, node, dim, edge_symbol)
+
+    def _new_edge(self, node1, node2, dim, edge_symbol):
+        """
+        Add an edge between two existing Nodes
+        """
+        # Create the networkx edge
+        assert node1 in self.G
+        assert node2 in self.G
+        key = self.G.add_edge(node1, node2)
+
+        # Create the Edge object
+        edge_id = (node1, node2, key)
+        Edge(self.G, edge_id, dim, edge_symbol)
 
     def add_dense_node(self, tensor, edge_symbols=None, name=None):
         """
@@ -42,7 +81,7 @@ class TN:
         """
         pass
 
-    def add_hyperedge_node(self, order, dimension=None, edge_symbols=None, name=None):
+    def add_hyperedge_node(self, degree, dimension=None, edge_symbols=None, name=None):
         """
         Add a single hyperedge (copy) node to the tensor network
         """
@@ -50,13 +89,31 @@ class TN:
 
     def new_node_name(self, name=None):
         """
-        Create new unused name for node, or check that proposed name is unused
+        Create unused name for node, or check that proposed name is unused
         """
         if name is None:
             name = f"node_{self.num_cores}"
         if self.G.has_node(name):
             raise TypeError(f"Node name '{name}' already in use")
         return name
+
+    def new_edge_symbols(self, node_type, degree):
+        """
+        Create a tuple of unused edge symbols
+        """
+        if degree == 0:
+            return tuple()
+        assert degree > 0
+        assert node_type != "dangler"
+
+        # Symbols are unique, except for with hyperedge nodes
+        if node_type in ("dense", "clone", "input"):
+            num_new = degree
+        elif node_type == "hyper":
+            num_new = 1
+        new_symbols = get_new_symbols(self.edge_symbols(), num_new)
+
+        return new_symbols if num_new == degree else new_symbols * degree
 
     @property
     def num_dense(self):
@@ -97,8 +154,9 @@ class TN:
         return len([n for n, d in self.G.nodes.data() if d["type"] != "dangler"])
 
     @property
-    def num_dangs(self):
+    def edge_symbols(self):
         """
-        Returns the number of placeholder dangling nodes in the TN
+        Return all the edge symbols currently in use
         """
-        return self.dict["num_dangs"]
+        symbols = [d["symbol"] for _, _, d in self.G.edges(data=True)]
+        return set(symbols)

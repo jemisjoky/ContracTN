@@ -8,13 +8,22 @@ class Edge:
         assert len(nx_id) == 3
         assert nx_id in G.edges
         self.G = G
-        self.dim = dim
         self.name = nx_id
-        self.symbol = symbol
         self.dict = G.edges[self.name]
-
-        # Get the two Node objects adjacent to the edge
-        self.nodes = tuple(G.node[n]["tn_edge"] for n in nx_id[:2])
+        self.dict["symbol"] = symbol
+        self.dict["dim"] = dim
 
         # Make pointer to the Edge accessible in networkx edge dictionary
         self.dict["tn_edge"] = self
+
+    @property
+    def nodes(self):
+        return tuple(self.G.node[n]["tn_edge"] for n in self.name[:2])
+
+    @property
+    def symbol(self):
+        return self.dict["symbol"]
+
+    @property
+    def dim(self):
+        return self.dict["dim"]

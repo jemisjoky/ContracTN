@@ -18,7 +18,7 @@ NODE_ARGS = {
         set(),
     ),
     "hyper": (
-        ("order",),
+        ("degree",),
         {
             "dim",
         },
@@ -60,10 +60,10 @@ class Node:
             assert n_edges == len(self.base.tensor.shape)
 
         elif node_type == "hyper":
-            self.order = kwargs["order"]
+            self.degree = kwargs["degree"]
             self.dim = kwargs["dim"] if "dim" in kwargs else None
             if self.edges is not None:
-                assert n_edges == self.order
+                assert n_edges == self.degree
 
         elif node_type == "input":
             self._shape = kwargs["shape"]
@@ -123,11 +123,12 @@ class Node:
         elif self.type == "clone":
             return self.base.tensor.shape
         elif self.type == "hyper":
-            return (-1 if self.dim is None else self.dim,) * self.order
+            return (-1 if self.dim is None else self.dim,) * self.degree
         elif self.type == "input":
             return self._shape
         elif self.type == "dangler":
-            return None  # TODO: Return something more sensible here
+            # It's simpler to assume danglers don't have a shape
+            assert ValueError("Node.shape not supported for dangling nodes")
 
 
 def check_node_args(node_type, kwdict):

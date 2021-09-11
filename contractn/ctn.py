@@ -15,7 +15,7 @@ class TN:
         self.G = nx.Graph()
         self._dang_id = 0
 
-    def _node_append(self, node_type, name, edge_symbols, **kwargs):
+    def _init_node(self, node_type, name, edge_symbols, **kwargs):
         """
         Create a new unconnected Node object and add it to the tensor network
 
@@ -25,7 +25,7 @@ class TN:
         Returns an error if used to create a dangling node
         """
         # Check that the name isn't currently used, create node in NX
-        name = self.new_node_name(name)
+        name = self._new_node_name(name)
         assert node_type != "dangler"
         self.G.add_node(name)
 
@@ -73,42 +73,85 @@ class TN:
         """
         Add a single dense node to the tensor network
         """
-        pass
+        node_type = "dense"
+        assert_valid_tensor(tensor)
+        edge_symbols = self._new_edge_symbols(
+            node_type, tensor.ndim, edge_symbols=edge_symbols
+        )
+        return self._init_node(node_type, name, edge_symbols)
 
-    def add_clone_node(self, base_node, edge_symbols=None, name=None):
+    def add_duplicate_node(self, base_node, name=None, edge_symbols=None):
         """
-        Add a single clone (shared) node to the tensor network
+        Add a single duplicate (clone) node to the tensor network
         """
-        pass
+        node_type = "clone"
+        if not isinstance(base_node, Node):
+            assert base_node in self.G
+            base_node = self.G.nodes[base_node]["tn_node"]
+        edge_symbols = self._new_edge_symbols(
+            node_type, base_node.ndim, edge_symbols=edge_symbols
+        )
+        return self._init_node(node_type, name, edge_symbols)
 
-    def add_hyperedge_node(self, degree, dimension=None, edge_symbols=None, name=None):
+    def add_hyperedge_node(self, degree, dimension=None, name=None, edge_symbols=None):
         """
         Add a single hyperedge (copy) node to the tensor network
         """
-        pass
+        node_type = "hyper"
+        # Edge symbol lists for hyperedge nodes contain single symbol
+        if isinstance(edge_symbols, str):
+            edge_symbols = [edge_symbols] * degree
+        edge_symbols = self._new_edge_symbols(
+            node_type, degree, edge_symbols=edge_symbols
+        )
+        return self._init_node(node_type, name, edge_symbols, dim=dimension)
 
-    def new_node_name(self, name=None):
+    def add_input_node(self, shape, var_shape_axes=(), name=None, edge_symbols=None):
+        """
+        Add a single input node to the tensor network
+        """
+        node_type = "input"
+        edge_symbols = self._new_edge_symbols(
+            node_type, len(shape), edge_symbols=edge_symbols
+        )
+        return self._init_node(
+            node_type, name, edge_symbols, shape=shape, var_axes=var_shape_axes
+        )
+
+    def _new_node_name(self, name=None):
         """
         Create unused name for node, or check that proposed name is unused
         """
         if name is None:
             name = f"node_{self.num_cores}"
+        assert isinstance(name, str)
         if self.G.has_node(name):
             raise TypeError(f"Node name '{name}' already in use")
         return name
 
-    def new_edge_symbols(self, node_type, degree):
+    def _new_edge_symbols(self, node_type, degree, edge_symbols=None):
         """
         Create a tuple of unused edge symbols
         """
+        # Verify user-specified edge symbols
+        if edge_symbols is not None:
+            assert len(edge_symbols) == degree
+            assert all(len(es) == 1 for es in edge_symbols)
+            assert all(isinstance(es, str) for es in edge_symbols)
+            if not self.edge_symbols.isdisjoint(edge_symbols):
+                bad_symbol = self.edge_symbols.intersection(edge_symbols).pop()
+                raise TypeError(f"Edge symbol '{bad_symbol}' already in use")
+            return edge_symbols
+
+        # Generate new edge symbols
         if degree == 0:
             return tuple()
         assert degree > 0
         assert node_type != "dangler"
 
-        # Symbols are unique, except for with hyperedge nodes
         if node_type in ("dense", "clone", "input"):
             num_new = degree
+        # Symbols are unique, except for hyperedge nodes
         elif node_type == "hyper":
             num_new = 1
         new_symbols = get_new_symbols(self.edge_symbols(), num_new)
@@ -123,9 +166,9 @@ class TN:
         return len([n for n, d in self.G.nodes.data() if d["type"] == "dense"])
 
     @property
-    def num_clone(self):
+    def num_duplicate(self):
         """
-        Returns the number of clone nodes in the tensor network
+        Returns the number of duplicate nodes in the tensor network
         """
         return len([n for n, d in self.G.nodes.data() if d["type"] == "clone"])
 

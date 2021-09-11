@@ -24,7 +24,7 @@ NODE_ARGS = {
         },
     ),
     "input": (
-        ("shape",),
+        ("shape", "var_axes"),
         set(),
     ),
     "dangler": ((), set()),
@@ -61,16 +61,15 @@ class Node:
 
         elif node_type == "hyper":
             self.degree = kwargs["degree"]
+            assert self.degree > 0
+            assert n_edges == self.degree
+            assert len(set(self.edges)) == 1
             self.dim = kwargs["dim"] if "dim" in kwargs else None
-            if self.edges is not None:
-                assert n_edges == self.degree
 
         elif node_type == "input":
             self._shape = kwargs["shape"]
-            self.symbol = kwargs["symbol"]
-            assert_valid_symbol(self.symbol)
+            self.var_axes = kwargs["var_axes"]
             assert n_edges == len(self._shape)
-            assert all(s == self.symbol for s in edge_symbols)
 
         elif node_type == "dangler":
             self.symbol = kwargs["symbol"]

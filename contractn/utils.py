@@ -26,20 +26,18 @@ def get_new_symbols(old_symbols, num_new):
     """
     num_symbols = len(old_symbols)
     assert len(set(old_symbols)) == num_symbols
-    old_idxs = [symbol_idx(s) for s in old_symbols]
-    min_idx, max_idx = min(old_idxs), max(old_idxs)
-    num_gaps = (max_idx - min_idx + 1) - num_symbols
+    old_idxs = {symbol_idx(s) for s in old_symbols}
+    max_idx = -1 if num_symbols == 0 else max(old_idxs)
+    num_gaps = 1 + max_idx - num_symbols
 
-    # Get the new symbols, trying to fill in any gaps in the old symbols
-    new_idxs = []
-    if num_gaps > 0:
-        for idx in range(min_idx + 1, max_idx):
-            if idx not in old_idxs:
-                new_idxs.append(idx)
-    if num_gaps < num_new:
-        for idx in range(max_idx + 1, max_idx + (num_new - num_gaps) + 1):
-            new_idxs.append(idx)
-    new_idxs = new_idxs[:num_new]
+    # Get new symbols lying in gaps between old symbols first
+    if num_gaps == 0:
+        new_idxs = []
+    else:
+        new_idxs = [i for i in range(max_idx) if i not in old_idxs][:num_new]
+    if len(new_idxs) < num_new:
+        new_idxs.extend(range(max_idx + 1, max_idx + 1 + (num_new - num_gaps)))
+    assert len(new_idxs) == num_new
 
     return tuple(oe.get_symbol(idx) for idx in new_idxs)
 
@@ -58,4 +56,5 @@ def symbol_idx(symbol):
         idx = ord(symbol) - 140
 
     assert oe.get_symbol(idx) == symbol
+    assert idx >= 0
     return idx

@@ -1,7 +1,3 @@
-.PHONY: check-style
-check-style:
-	flake8
-
 # .PHONY: clean
 # clean:
 # 	rm -rf contractn.egg-info
@@ -30,6 +26,10 @@ format:
 # .PHONY: requirements
 # requirements: requirements.txt
 # 	pip install -r requirements.txt
+
+.PHONY: style
+style:
+	flake8
 
 .PHONY: test
 test:

@@ -27,8 +27,13 @@ def test_add_dense_node(order, use_name, use_edge_symbols):
 
     assert node.ndim == order
     assert node.shape == tensor.shape
-    assert node.edges == good_symbols
+    assert node.edge_symbols == good_symbols
     assert node.size == node.numel == tensor.size
+
+    # Verify that we get errors for non-defined attributes
+    for attr in ["base_node", "degree", "dim", "var_axes"]:
+        with pytest.raises(Exception):
+            getattr(node, attr)
 
 
 @given(st.integers(0, 3), st.booleans(), st.booleans(), st.booleans())
@@ -57,10 +62,15 @@ def test_add_duplicate_node(order, use_dense_name, use_name, use_edge_symbols):
 
     assert node.ndim == order
     assert node.shape == tensor.shape
-    assert node.edges == good_symbols
+    assert node.edge_symbols == good_symbols
     assert node.base_node is dense_node
     assert node.size == tensor.size
     assert node.numel == 0
+
+    # Verify that we get errors for non-defined attributes
+    for attr in ["tensor", "degree", "dim", "var_axes"]:
+        with pytest.raises(Exception):
+            getattr(node, attr)
 
 
 @given(st.integers(0, 3), st.booleans(), st.booleans(), st.booleans(), st.booleans())
@@ -94,12 +104,17 @@ def test_add_hyperedge_node(order, use_dim, single_symbol, use_name, use_edge_sy
 
     assert node.ndim == order
     assert node.shape == good_shape
-    assert node.edges == good_symbols
+    assert node.edge_symbols == good_symbols
     if use_dim:
         assert node.size == 5 ** order
     else:
         assert node.size is None
     assert node.numel == 0
+
+    # Verify that we get errors for non-defined attributes
+    for attr in ["tensor", "base_node", "var_axes"]:
+        with pytest.raises(Exception):
+            getattr(node, attr)
 
 
 @given(st.integers(0, 3), st.booleans(), st.booleans(), st.booleans())
@@ -125,9 +140,14 @@ def test_add_input_node(order, use_var_axis, use_name, use_edge_symbols):
 
     assert node.ndim == order
     assert node.shape == tuple(-1 if i in var_axes else d for i, d in enumerate(shape))
-    assert node.edges == good_symbols
+    assert node.edge_symbols == good_symbols
     if len(var_axes) == 0:
         assert node.size == prod(shape)
     else:
         assert node.size is None
     assert node.numel == 0
+
+    # Verify that we get errors for non-defined attributes
+    for attr in ["tensor", "base_node", "degree", "dim"]:
+        with pytest.raises(Exception):
+            getattr(node, attr)

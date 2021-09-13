@@ -37,6 +37,7 @@ class TN:
         assert len(edge_symbols) == len(node.shape)
         for s, d in zip(edge_symbols, node.shape):
             self._new_dangler(node, d, s)
+        assert node.ndim == len(node.shape)
 
         return node
 
@@ -55,9 +56,9 @@ class TN:
         node = Node(self, "dangler", nx_id, (edge_symbol,))
 
         # Create an edge between dangler and parent node
-        self._new_edge(parent, node, dim, edge_symbol)
+        self._init_edge(parent, node, dim, edge_symbol)
 
-    def _new_edge(self, node1, node2, dim, edge_symbol):
+    def _init_edge(self, node1, node2, dim, edge_symbol):
         """
         Add an edge between two existing Nodes
         """
@@ -69,7 +70,7 @@ class TN:
 
         # Create the Edge object
         edge_id = (node1, node2, key)
-        Edge(self.G, edge_id, dim, edge_symbol)
+        Edge(self, edge_id, dim, edge_symbol)
 
     def add_dense_node(self, tensor, name=None, edge_symbols=None):
         """
@@ -121,6 +122,9 @@ class TN:
         return self._init_node(
             node_type, name, edge_symbols, shape=shape, var_axes=var_shape_axes
         )
+
+    def connect_nodes(self):
+        pass
 
     def _new_node_name(self, name=None):
         """

@@ -1,20 +1,33 @@
+from .utils import assert_valid_symbol
+
+
 class Edge:
     """
     Generic edge of a TN, which wraps the corresponding edge in NetworkX
     """
 
-    def __init__(self, G, nx_id, dim, symbol):
+    def __init__(self, parent_tn, nx_id, dim, symbol):
         assert isinstance(nx_id, tuple)
         assert len(nx_id) == 3
-        assert nx_id in G.edges
-        self.G = G
+        assert nx_id in parent_tn.G.edges
+        self.tn = parent_tn
+        self.G = self.tn.G
         self.name = nx_id
-        self.dict = G.edges[self.name]
-        self.dict["symbol"] = symbol
+
+        assert isinstance(dim, int)
+        assert_valid_symbol(symbol)
         self.dict["dim"] = dim
+        self.dict["symbol"] = symbol
 
         # Make pointer to the Edge accessible in networkx edge dictionary
         self.dict["tn_edge"] = self
+
+    @property
+    def dict(self):
+        """
+        Attribute dictionary associated with underlying networkx edge
+        """
+        return self.G.edges[self.name]
 
     @property
     def nodes(self):
@@ -27,3 +40,7 @@ class Edge:
     @property
     def dim(self):
         return self.dict["dim"]
+
+    @property
+    def var_dim(self):
+        return self.dim < 0

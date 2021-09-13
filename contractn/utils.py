@@ -1,5 +1,5 @@
 """Miscellaneous helper functions"""
-from functools import lru_cache
+from functools import lru_cache, partial
 
 import opt_einsum as oe
 
@@ -58,3 +58,29 @@ def symbol_idx(symbol):
     assert oe.get_symbol(idx) == symbol
     assert idx >= 0
     return idx
+
+
+def node_specific_attr_error(node_type, attr_name, node_name, input_ntype):
+    """
+    Error message generator for node-specific attributes
+    """
+    full_name = full_node_names[node_type]
+    return ValueError(
+        f"Only {full_name} nodes have {attr_name} attributes "
+        f"(node '{node_name}' has node type '{input_ntype}')"
+    )
+
+
+tensor_attr_error = partial(node_specific_attr_error, "dense", "tensor")
+basenode_attr_error = partial(node_specific_attr_error, "clone", "base_node")
+degree_attr_error = partial(node_specific_attr_error, "hyper", "degree")
+dim_attr_error = partial(node_specific_attr_error, "hyper", "dim")
+varaxes_attr_error = partial(node_specific_attr_error, "input", "var_axes")
+
+
+full_node_names = {
+    "dense": "dense",
+    "clone": "duplicate",
+    "hyper": "hyperedge",
+    "input": "input",
+}

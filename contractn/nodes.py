@@ -1,5 +1,14 @@
 from math import prod
 
+from .utils import (
+    assert_valid_tensor,
+    tensor_attr_error,
+    basenode_attr_error,
+    degree_attr_error,
+    dim_attr_error,
+    varaxes_attr_error,
+)
+
 # Collection of node types which are currently supported
 NODE_TYPES = ("dense", "clone", "hyper", "input", "dangler")
 
@@ -34,43 +43,71 @@ class Node:
 
     def __init__(self, parent_tn, node_type, nx_name, edge_symbols, **kwargs):
         check_node_args(node_type, kwargs)
+        assert nx_name in parent_tn.G
         self.tn = parent_tn
-        self.node_type = node_type
         self.name = nx_name
-        self.G = self.tn.G
-        self.dict = self.G.nodes[self.name]
-        assert nx_name in self.G
+        self.dict["node_type"] = node_type
 
         # List of NX edges is needed to order edges (they're unordered in NX)
-        self.edges = tuple(edge_symbols)
-        n_edges = len(self.edges)
+        self.dict["edge_symbols"] = tuple(edge_symbols)
+        n_edges = len(self.edge_symbols)
 
         if node_type == "dense":
-            self.tensor = kwargs["tensor"]
+            self.dict["tensor"] = kwargs["tensor"]
             assert n_edges == self.tensor.ndim
 
         elif node_type == "clone":
-            self.base_node = kwargs["base_node"]
+            self.dict["base_node"] = kwargs["base_node"]
             if not isinstance(self.base_node, Node):
-                self.base_node = self.G.nodes[self.base_node]["tn_node"]
+                self.dict["base_node"] = self.G.nodes[self.base_node]["tn_node"]
             assert self.base_node.node_type == "dense"
-            assert n_edges == len(self.base_node.tensor.shape)
+            assert n_edges == self.base_node.tensor.ndim
 
         elif node_type == "hyper":
-            self.degree = kwargs["degree"]
-            assert self.degree > 0
+            self.dict["degree"] = kwargs["degree"]
+            assert self.degree > 0, "Hyperedge nodes must have positive degree"
             assert n_edges == self.degree
-            assert len(set(self.edges)) == 1
-            self.dim = kwargs["dim"] if "dim" in kwargs else None
+            assert len(set(self.edge_symbols)) == 1
+            self.dict["dim"] = kwargs["dim"] if "dim" in kwargs else None
+            assert isinstance(self.dim, int) or self.dim is None
 
         elif node_type == "input":
-            self._shape = kwargs["shape"]
-            self.var_axes = kwargs["var_axes"]
-            assert n_edges == len(self._shape)
+            self.dict["_shape"] = kwargs["shape"]
+            self.dict["var_axes"] = kwargs["var_axes"]
+            assert n_edges == len(self.dict["_shape"])
+            assert len(set(self.var_axes)) == len(self.var_axes)
+            assert all(0 <= va < n_edges for va in self.var_axes)
 
         # Make pointer to the Node accessible in networkx node dictionary
         self.dict["tn_node"] = self
-        self.dict["node_type"] = node_type
+
+    @property
+    def node_type(self):
+        """
+        Type of the node
+        """
+        return self.dict["node_type"]
+
+    @property
+    def G(self):
+        """
+        Networkx graph underlying the node's parent TN
+        """
+        return self.tn.G
+
+    @property
+    def edge_symbols(self):
+        """
+        Ordered list of symbols associated with modes of the underlying tensor
+        """
+        return self.dict["edge_symbols"]
+
+    @property
+    def dict(self):
+        """
+        Attribute dictionary associated with underlying networkx node
+        """
+        return self.G.nodes[self.name]
 
     @property
     def ndim(self):
@@ -119,11 +156,65 @@ class Node:
             return (-1 if self.dim is None else self.dim,) * self.degree
         elif self.node_type == "input":
             return tuple(
-                -1 if i in self.var_axes else d for i, d in enumerate(self._shape)
+                -1 if i in self.var_axes else d
+                for i, d in enumerate(self.dict["_shape"])
             )
         elif self.node_type == "dangler":
             # It's simpler to assume danglers don't have a shape
             assert ValueError("Node.shape not supported for dangling nodes")
+
+    @property
+    def tensor(self):
+        """
+        Tensor defining a dense node
+        """
+        if self.node_type != "dense":
+            raise tensor_attr_error(self.name, self.node_type)
+        return self.dict["tensor"]
+
+    @tensor.setter
+    def tensor(self, array):
+        if self.node_type != "dense":
+            raise tensor_attr_error(self.name, self.node_type)
+        assert_valid_tensor(array)
+        assert array.ndim == self.ndim
+        self.dict["tensor"] = array
+
+    @property
+    def base_node(self):
+        """
+        Base node defining a duplicate node
+        """
+        if self.node_type != "clone":
+            raise basenode_attr_error(self.name, self.node_type)
+        return self.dict["base_node"]
+
+    @property
+    def degree(self):
+        """
+        Degree of a hyperedge node
+        """
+        if self.node_type != "hyper":
+            raise degree_attr_error(self.name, self.node_type)
+        return self.dict["degree"]
+
+    @property
+    def dim(self):
+        """
+        Dimension of the edges of a hyperedge node
+        """
+        if self.node_type != "hyper":
+            raise dim_attr_error(self.name, self.node_type)
+        return self.dict["dim"]
+
+    @property
+    def var_axes(self):
+        """
+        Index numbers of the axes of an input tensor that aren't yet specified
+        """
+        if self.node_type != "input":
+            raise varaxes_attr_error(self.name, self.node_type)
+        return self.dict["var_axes"]
 
 
 def check_node_args(node_type, kwdict):

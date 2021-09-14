@@ -7,6 +7,7 @@ from .utils import (
     degree_attr_error,
     dim_attr_error,
     varaxes_attr_error,
+    opposite_node,
 )
 
 # Collection of node types which are currently supported
@@ -42,6 +43,11 @@ class Node:
     """
 
     def __init__(self, parent_tn, node_type, nx_name, edge_symbols, **kwargs):
+
+        # Keep in mind that most attributes of a Node are derived from the
+        # dictionary stored in the associated NX node, so these shouldn't be
+        # used until after initialization is completed.
+
         check_node_args(node_type, kwargs)
         assert nx_name in parent_tn.G
         self.tn = parent_tn
@@ -49,8 +55,11 @@ class Node:
         self.dict["node_type"] = node_type
 
         # List of NX edges is needed to order edges (they're unordered in NX)
-        self.dict["edge_symbols"] = tuple(edge_symbols)
-        n_edges = len(self.edge_symbols)
+        n_edges = len(edge_symbols)
+        if node_type == "hyper":
+            assert len(set(edge_symbols)) == 1
+        else:
+            assert len(set(edge_symbols)) == n_edges
 
         if node_type == "dense":
             self.dict["tensor"] = kwargs["tensor"]
@@ -67,7 +76,6 @@ class Node:
             self.dict["degree"] = kwargs["degree"]
             assert self.degree > 0, "Hyperedge nodes must have positive degree"
             assert n_edges == self.degree
-            assert len(set(self.edge_symbols)) == 1
             self.dict["dim"] = kwargs["dim"] if "dim" in kwargs else None
             assert isinstance(self.dim, int) or self.dim is None
 
@@ -80,6 +88,18 @@ class Node:
 
         # Make pointer to the Node accessible in networkx node dictionary
         self.dict["tn_node"] = self
+
+        # Create requisite number of dangling nodes, save list of NX edge ids
+        edge_names = []
+        assert len(self.shape) == len(edge_symbols)
+        if node_type != "dangler":
+            for i, s in enumerate(edge_symbols):
+                edge_names.append(self.tn._new_dangler(self, i, s))
+        else:
+            # Don't need to create danglers for danglers, just get edge id
+            assert len(self.G.edges(self.name)) == 0
+            edge_names = list(self.G.edges(self.name, keys=True))
+        self._edge_names = edge_names
 
     @property
     def node_type(self):
@@ -96,11 +116,38 @@ class Node:
         return self.tn.G
 
     @property
+    def edge_names(self):
+        """
+        Ordered list of networkx labels for the edges connected to node
+        """
+        assert set(self._edge_names) == set(self.G.edges(self.name, keys=True))
+        return self._edge_names
+
+    @property
+    def edges(self):
+        """
+        Ordered list of edge objects for the modes of the underlying tensor
+        """
+        return tuple(self.G.edges[en]["tn_edge"] for en in self.edge_names)
+
+    @property
     def edge_symbols(self):
         """
         Ordered list of symbols associated with modes of the underlying tensor
         """
-        return self.dict["edge_symbols"]
+        return tuple(e.symbol for e in self.edges)
+
+    def _dang_name(self, idx):
+        """
+        Returns name of the dangling node at other end of edge at given index
+
+        Raises an error when the other node isn't a dangler
+        """
+        # Pull the corresponding node from the edge name, check it's good
+        edge_name = self.edge_names[idx]
+        dang_name = opposite_node(edge_name, self.name)
+        assert len(self.G[self.name][self.dang_name]) == 1
+        return dang_name
 
     @property
     def dict(self):
@@ -114,7 +161,9 @@ class Node:
         """
         Number of edges of the node, i.e. number of modes of the tensor
         """
-        return self.G.degree(self.name)
+        ndim = self.G.degree(self.name)
+        assert ndim == len(self.shape)
+        return ndim
 
     @property
     def size(self):
@@ -160,8 +209,7 @@ class Node:
                 for i, d in enumerate(self.dict["_shape"])
             )
         elif self.node_type == "dangler":
-            # It's simpler to assume danglers don't have a shape
-            assert ValueError("Node.shape not supported for dangling nodes")
+            return (-1,)
 
     @property
     def tensor(self):
@@ -215,6 +263,22 @@ class Node:
         if self.node_type != "input":
             raise varaxes_attr_error(self.name, self.node_type)
         return self.dict["var_axes"]
+
+    @property
+    def neighbors(self):
+        """
+        Ordered list of nodes which connect to the given node
+
+        Output list is based on the edges of the given node, so that nodes
+        which are connected by multiple edges will be listed multiple times.
+
+        For nodes which have dangling edges, a dangling node is placed in the
+        appropriate spot.
+        """
+        return tuple(
+            self.G.nodes[opposite_node(e, self.name)]["tn_node"]
+            for e in self.edge_names
+        )
 
 
 def check_node_args(node_type, kwdict):

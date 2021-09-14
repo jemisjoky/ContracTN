@@ -71,6 +71,15 @@ def node_specific_attr_error(node_type, attr_name, node_name, input_ntype):
     )
 
 
+def opposite_node(edge_id, node):
+    """
+    Get the neighbor of a given node along a given edge
+    """
+    assert node in edge_id[:2]
+    node_idx = edge_id[:2].index(node)
+    return edge_id[(node_idx + 1) % 2]
+
+
 tensor_attr_error = partial(node_specific_attr_error, "dense", "tensor")
 basenode_attr_error = partial(node_specific_attr_error, "clone", "base_node")
 degree_attr_error = partial(node_specific_attr_error, "hyper", "degree")

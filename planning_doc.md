@@ -85,6 +85,22 @@ What are some purely linear-algebraic attributes that ctn.TN nodes have which nx
 * Maybe a `tn` node, which contains an entire underlying TN. How feasible would this be to carry out? I'd need some functionality to flatten this, adding all internal nodes and edges into the parent TN, and this would need to be carried out near the end of any conversion into a computable output. This would actually be a pretty cool idea, and the main practical restriction would be internal information to the child networks would be inaccessible to the parent network, and vice versa. Not a big limitation though, and this could really open the door to modularization in TNs.
 
 
+## Relationship between custom classes and NetworkX objects
+
+Finally implemented all of the custom classes for edges, nodes, and NX graphs, and the layout is really elegant. One pattern I've found very useful is keeping a pointer to the custom class (`Edge`, `Node`, or `TN`) inside the attribute dictionary of the corresponding NX object. This way I can freely transform between custom objects and NX equivalents, but I just realized there's something a bit cooler than this.
+
+I can freely treat a TN object as a NX multigraph, by replacing `self` with `self.G`. Therefore, I can make freely wrap any arbitrary NX algorithm into one acting on TNs, via this simple process:
+
+1. Get NX (multi)graph underlying TN, via `self.G`.
+2. Apply NX algorithm to the graph.
+3. Recover TN above NX graph, via `self.dict["tn"]`, and return that.
+
+Some of these NX algorithms might not correspond to anything mathematically well-defined in the TN world, but we can at least do something funny and shuffle all the node dictionaries around.
+
+This is powerful but also kinda dangerous, given that it is easy to implement a function which doesn't actually mean anything. For wrapping NX algorithms in this manner, how should I account for transformations of the TN attributes? For starters, some combination of preprocessing and postprocessing of the TNs (additional steps 0 and 4 in above list) could be used to update TN, Node, and Edge attributes based on changes in the underlying graph. I think something more is needed, but that still could be useful.
+
+The contraction process is a canonical example of this relationship between graphical primitives (node merging) and multilinear algebra, expressed here using attributes of the NX graph. More generally, we can see contraction of a TN as just the limit of some graphical process (iterated merging), but translated into a linear algebraic domain. Coding this up is a really nourishing exercise, will be fun to see how this plays out!
+
 ## Customizing the Behavior of Contraction
 
 There might be cases where I want certain program logic to be inserted inside of the contraction process. For example, when I'm indexing cores I might not want the core to be indexed until right before it is contracted with.

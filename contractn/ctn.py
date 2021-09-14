@@ -30,23 +30,17 @@ class TN:
         assert node_type != "dangler"
         self.G.add_node(name)
 
-        # Create the Node object of interest
+        # Create the Node object of interest, along with dangling nodes
         node = Node(self, node_type, name, edge_symbols, **kwargs)
-
-        # Create the dangling nodes
-        assert len(edge_symbols) == len(node.shape)
-        for s, d in zip(edge_symbols, node.shape):
-            self._new_dangler(node, d, s)
-        assert node.ndim == len(node.shape)
 
         return node
 
-    def _new_dangler(self, parent, dim, edge_symbol):
+    def _new_dangler(self, parent, idx, edge_symbol):
         """
         Add a dangler node connected to a non-dangler parent node
         """
         # Add the node to NX
-        nx_id = self._dang_id
+        nx_id = f"_dangler_{self._dang_id}"
         assert nx_id not in self.G
         assert parent.name in self.G
         self.G.add_node(nx_id)
@@ -56,21 +50,41 @@ class TN:
         node = Node(self, "dangler", nx_id, (edge_symbol,))
 
         # Create an edge between dangler and parent node
-        self._init_edge(parent, node, dim, edge_symbol)
+        return self._init_edge(parent, node, idx, 0, edge_symbol)
 
-    def _init_edge(self, node1, node2, dim, edge_symbol):
+    def _init_edge(self, node1, node2, idx1, idx2, edge_symbol):
         """
         Add an edge between two existing Nodes
         """
-        # Create the networkx edge
-        node1, node2 = node1.name, node2.name
-        assert node1 in self.G
-        assert node2 in self.G
-        key = self.G.add_edge(node1, node2)
+        # Validate input
+        assert isinstance(node1, Node) and isinstance(node2, Node)
+        assert_valid_symbol(edge_symbol)
+        assert 0 <= idx1 < len(node1.shape)
+        assert 0 <= idx2 < len(node2.shape)
+        assert node1 in self
+        assert node2 in self
 
-        # Create the Edge object
-        edge_id = (node1, node2, key)
-        Edge(self, edge_id, dim, edge_symbol)
+        # Check compatibility of (potentially variable-size) mode dimensions
+        dim1, dim2 = node1.shape[idx1], node2.shape[idx2]
+        var1, var2 = dim1 < 0, dim2 < 0
+        if var1 and var2:
+            new_dim = -1
+        elif var1 != var2:
+            new_dim = max(dim1, dim2)
+        else:
+            assert dim1 == dim2
+            new_dim = dim1
+
+        # Create the networkx edge and corresponding Edge object
+        n1, n2 = node1.name, node2.name
+        edge_id = (n1, n2, self.G.add_edge(n1, n2))
+        Edge(self, edge_id, new_dim, edge_symbol)
+
+        # Hyperedge tensors might need some rewriting of edge symbols
+        if "hyper" in {node1.node_type, node2.node_type}:
+            self._cleanup_edge_symbols()
+
+        return edge_id
 
     def add_dense_node(self, tensor, name=None, edge_symbols=None):
         """
@@ -123,8 +137,30 @@ class TN:
             node_type, name, edge_symbols, shape=shape, var_axes=var_shape_axes
         )
 
-    def connect_nodes(self):
-        pass
+    def connect_nodes(self, node1, node2, index1, index2, edge_symbol=None):
+        """
+        Create a new edge between two existing nodes along compatible modes
+        """
+        # Convert node labels to nodes
+        if not isinstance(node1, Node):
+            assert node1 in self.G
+            node1 = self.G[node1]["tn_node"]
+        if not isinstance(node2, Node):
+            assert node2 in self.G
+            node1 = self.G[node2]["tn_node"]
+
+        # Get new edge symbol
+        es1, es2 = node1.edge_symbols[index1], node2.edge_symbols[index2]
+        if edge_symbol in self.edge_symbols:
+            assert edge_symbol in {es1, es2}
+        if edge_symbol is None:
+            edge_symbol = min(es1, es2)
+
+        # Connect the nodes, remove danglers, update the edge list in nodes
+        edge_id = self._init_edge(node1, node2, index1, index2, edge_symbol)
+        self.G.remove_node(node1._dang_name(index1))
+        self.G.remove_node(node2._dang_name(index2))
+        node1.edge_names[index2] = node2.edge_names[index2] = edge_id
 
     def _new_node_name(self, name=None):
         """
@@ -165,6 +201,13 @@ class TN:
         new_symbols = get_new_symbols(self.edge_symbols, num_new)
 
         return new_symbols if num_new == degree else new_symbols * degree
+
+    def _cleanup_edge_symbols(self, naughty_node=None):
+        """
+        Simplify edge symbols by identifying symbols along connected hyperedges
+        """
+        # TODO: Find connected clusters of copy tensors, then identify all edge symbols in each cluster
+        pass
 
     @property
     def num_dense(self):
@@ -211,3 +254,8 @@ class TN:
         """
         symbols = [d["symbol"] for _, _, d in self.G.edges(data=True)]
         return set(symbols)
+
+    def __contains__(self, node):
+        if isinstance(node, Node):
+            node = node.name
+        return node in self.G

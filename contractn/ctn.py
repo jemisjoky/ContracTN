@@ -1,3 +1,5 @@
+from collections import Counter
+
 import networkx as nx
 
 # import opt_einsum as oe
@@ -88,7 +90,8 @@ class TN:
 
         # Hyperedge tensors might need some rewriting of edge symbols
         if "hyper" in {node1.node_type, node2.node_type}:
-            self._cleanup_edge_symbols()
+            naughty_node = node1 if node1.node_type == "hyper" else node2
+            self._cleanup_edge_symbols(naughty_node)
 
         return edge_id
 
@@ -116,7 +119,7 @@ class TN:
         )
         return self._init_node(node_type, name, edge_symbols, base_node=base_node)
 
-    def add_hyperedge_node(self, degree, dimension=None, name=None, edge_symbols=None):
+    def add_hyperedge_node(self, degree, dim=None, name=None, edge_symbols=None):
         """
         Add a single hyperedge (copy) node to the tensor network
         """
@@ -127,9 +130,7 @@ class TN:
         edge_symbols = self._new_edge_symbols(
             node_type, degree, edge_symbols=edge_symbols
         )
-        return self._init_node(
-            node_type, name, edge_symbols, degree=degree, dim=dimension
-        )
+        return self._init_node(node_type, name, edge_symbols, degree=degree, dim=dim)
 
     def add_input_node(self, shape, var_shape_axes=(), name=None, edge_symbols=None):
         """
@@ -214,9 +215,32 @@ class TN:
         """
         Simplify edge symbols by identifying symbols along connected hyperedges
         """
-        # TODO: Find connected clusters of copy tensors, then identify all
-        #       edge symbols in that cluster
-        pass
+        G = self.G
+        if naughty_node is None:
+            # Get all connected clusters of hyperedge nodes
+            hyper_nodes = [n for n, nt in G.nodes(data="node_type") if nt == "hyper"]
+            hyper_comps = list(nx.connected_components(G.subgraph(hyper_nodes)))
+            symbol_counts = [
+                Counter(es for _, _, es in G.edges(comp, data="symbol"))
+                for comp in hyper_comps
+            ]
+            best_symbols = [count.most_common(1)[0][0] for count in symbol_counts]
+            for bs, comp in zip(best_symbols, hyper_comps):
+                assert_valid_symbol(bs)
+                for _, _, d in G.edges.data():
+                    d["symbol"] = bs
+
+        else:
+            # Get a single cluster of hyperedge nodes
+            assert naughty_node.node_type == "hyper"
+            hyper_comp = nx.node_connected_component(G, naughty_node.name)
+            symbol_count = Counter(
+                es for _, _, es in G.edges(hyper_comp, data="symbol")
+            )
+            best_symbol = symbol_count.most_common(1)[0][0]
+            assert_valid_symbol(best_symbol)
+            for _, _, d in G.edges.data():
+                d["symbol"] = best_symbol
 
     def nodes(self, as_iter=False, danglers=False):
         """

@@ -8,6 +8,7 @@ from .utils import (
     dim_attr_error,
     varaxes_attr_error,
     opposite_node,
+    edge_set_equality,
 )
 
 # Collection of node types which are currently supported
@@ -50,12 +51,14 @@ class Node:
 
         check_node_args(node_type, kwargs)
         assert nx_name in parent_tn.G
+        n_edges = len(edge_symbols)
         self.tn = parent_tn
         self.name = nx_name
         self.dict["node_type"] = node_type
+        # Ordered list of edge names which gets populated by end of init
+        self._edge_names = [None] * n_edges
 
         # List of NX edges is needed to order edges (they're unordered in NX)
-        n_edges = len(edge_symbols)
         if node_type == "hyper":
             assert len(set(edge_symbols)) == 1
         else:
@@ -90,16 +93,14 @@ class Node:
         self.dict["tn_node"] = self
 
         # Create requisite number of dangling nodes, save list of NX edge ids
-        edge_names = []
         assert len(self.shape) == len(edge_symbols)
         if node_type != "dangler":
             for i, s in enumerate(edge_symbols):
-                edge_names.append(self.tn._new_dangler(self, i, s))
+                self._edge_names[i] = self.tn._new_dangler(self, i, s)
         else:
             # Don't need to create danglers for danglers, just get edge id
             assert len(self.G.edges(self.name)) == 0
-            edge_names = list(self.G.edges(self.name, keys=True))
-        self._edge_names = edge_names
+            self._edge_names = list(self.G.edges(self.name, keys=True))
 
     @property
     def node_type(self):
@@ -120,7 +121,7 @@ class Node:
         """
         Ordered list of networkx labels for the edges connected to node
         """
-        assert set(self._edge_names) == set(self.G.edges(self.name, keys=True))
+        assert edge_set_equality(self._edge_names, self.G.edges(self.name, keys=True))
         return self._edge_names
 
     @property
@@ -144,9 +145,9 @@ class Node:
         Raises an error when the other node isn't a dangler
         """
         # Pull the corresponding node from the edge name, check it's good
-        edge_name = self.edge_names[idx]
+        edge_name = self._edge_names[idx]
         dang_name = opposite_node(edge_name, self.name)
-        assert len(self.G[self.name][self.dang_name]) == 1
+        assert len(self.G[self.name][dang_name]) == 1  # Dangler has one edge
         return dang_name
 
     @property
@@ -242,6 +243,8 @@ class Node:
         """
         Degree of a hyperedge node
         """
+        # TODO: This is unnecessary, since this is equivalent to ndim. Perhaps
+        #       make this a pseudonym for ndim?
         if self.node_type != "hyper":
             raise degree_attr_error(self.name, self.node_type)
         return self.dict["degree"]
@@ -279,6 +282,9 @@ class Node:
             self.G.nodes[opposite_node(e, self.name)]["tn_node"]
             for e in self.edge_names
         )
+
+    def __getitem__(self, key):
+        return self.G.edges[self.edge_names[key]]["tn_edge"]
 
 
 def check_node_args(node_type, kwdict):

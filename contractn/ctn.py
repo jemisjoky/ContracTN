@@ -30,7 +30,7 @@ class TN:
         assert node_type != "dangler"
         self.G.add_node(name)
 
-        # Create the Node object of interest, along with dangling nodes
+        # Create the Node object of interest, along with dangling nodes and edges
         node = Node(self, node_type, name, edge_symbols, **kwargs)
 
         return node
@@ -79,6 +79,12 @@ class TN:
         n1, n2 = node1.name, node2.name
         edge_id = (n1, n2, self.G.add_edge(n1, n2))
         Edge(self, edge_id, new_dim, edge_symbol)
+
+        # Update the ordered edge list in node
+        if node1.node_type != "dangler":
+            node1._edge_names[idx1] = edge_id
+        if node2.node_type != "dangler":
+            node2._edge_names[idx2] = edge_id
 
         # Hyperedge tensors might need some rewriting of edge symbols
         if "hyper" in {node1.node_type, node2.node_type}:
@@ -141,6 +147,9 @@ class TN:
         """
         Create a new edge between two existing nodes along compatible modes
         """
+        # Check that edges are dangling
+        node1[index1].dangler != node2[index2].dangler
+
         # Convert node labels to nodes
         if not isinstance(node1, Node):
             assert node1 in self.G
@@ -157,10 +166,9 @@ class TN:
             edge_symbol = min(es1, es2)
 
         # Connect the nodes, remove danglers, update the edge list in nodes
-        edge_id = self._init_edge(node1, node2, index1, index2, edge_symbol)
-        self.G.remove_node(node1._dang_name(index1))
-        self.G.remove_node(node2._dang_name(index2))
-        node1.edge_names[index2] = node2.edge_names[index2] = edge_id
+        dang1, dang2 = node1._dang_name(index1), node2._dang_name(index2)
+        self.G.remove_node(dang1), self.G.remove_node(dang2)
+        self._init_edge(node1, node2, index1, index2, edge_symbol)
 
     def _new_node_name(self, name=None):
         """
@@ -206,36 +214,68 @@ class TN:
         """
         Simplify edge symbols by identifying symbols along connected hyperedges
         """
-        # TODO: Find connected clusters of copy tensors, then identify all edge symbols in each cluster
+        # TODO: Find connected clusters of copy tensors, then identify all
+        #       edge symbols in that cluster
         pass
+
+    def nodes(self, as_iter=False, danglers=False):
+        """
+        Iterator over the Node objects contained in the TN
+
+        Args:
+            as_iter: Whether to return nodes as an iterator or a tuple.
+                (Default: False)
+            danglers: Whether to include dangling nodes, used to
+                terminate an unconnected edge in the TN.
+                (Default: False)
+
+        Returns:
+            node_iter: Iterator or tuple containing all Nodes of the TN, in
+                the order they were added.
+        """
+        node_iter = (d["tn_node"] for n, d in self.G.nodes.data())
+        if not danglers:
+            node_iter = (n for n in node_iter if n.node_type != "dangler")
+        return node_iter if as_iter else tuple(node_iter)
+
+    def edges(self, as_iter=False):
+        """
+        Iterator over the Edge objects contained in the TN
+
+        Args:
+            as_iter: Whether to return edges as an iterator or a tuple.
+                (Default: False)
+        """
+        edge_iter = (d["tn_edge"] for _, _, d in self.G.edges.data())
+        return edge_iter if as_iter else tuple(edge_iter)
 
     @property
     def num_dense(self):
         """
         Returns the number of dense nodes in the tensor network
         """
-        return len([n for n, d in self.G.nodes.data() if d["node_type"] == "dense"])
+        return len([n for n in self.nodes() if n.node_type == "dense"])
 
     @property
     def num_duplicate(self):
         """
         Returns the number of duplicate nodes in the tensor network
         """
-        return len([n for n, d in self.G.nodes.data() if d["node_type"] == "clone"])
+        return len([n for n in self.nodes() if n.node_type == "clone"])
 
     @property
     def num_hyperedge(self):
         """
         Returns the number of hyperedge nodes in the tensor network
         """
-        return len([n for n, d in self.G.nodes.data() if d["node_type"] == "hyper"])
+        return len([n for n in self.nodes() if n.node_type == "hyper"])
 
     @property
     def num_input(self):
         """
         Returns the number of input nodes in the tensor network
         """
-        return len([n for n, d in self.G.nodes.data() if d["node_type"] == "input"])
+        return len([n for n in self.nodes() if n.node_type == "input"])
 
     @property
     def num_cores(self):
@@ -245,7 +285,7 @@ class TN:
         This does not include "dangling" nodes in the count, which are just
         placeholders used to indicate uncontracted edges of the network.
         """
-        return len([n for n, d in self.G.nodes.data() if d["node_type"] != "dangler"])
+        return len(self.nodes())
 
     @property
     def edge_symbols(self):

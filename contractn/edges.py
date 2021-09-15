@@ -31,7 +31,7 @@ class Edge:
 
     @property
     def nodes(self):
-        return tuple(self.G.node[n]["tn_edge"] for n in self.name[:2])
+        return tuple(self.G.nodes[n]["tn_node"] for n in self.name[:2])
 
     @property
     def symbol(self):
@@ -44,3 +44,7 @@ class Edge:
     @property
     def var_dim(self):
         return self.dim < 0
+
+    @property
+    def dangler(self):
+        return any(n.node_type == "dangler" for n in self.nodes)

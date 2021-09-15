@@ -20,6 +20,27 @@ def assert_valid_symbol(symbol):
     assert len(symbol) == 1
 
 
+def edge_set_equality(edgeset1, edgeset2):
+    """
+    Returns whether two edge sets are equal
+    """
+    es1, es2 = set(edgeset1), set(edgeset2)
+    union = es1 | es2
+    if len(union) == 0:
+        return True
+    assert set(len(t) for t in union) in ({2}, {3})
+    multiset = len(union.pop()) == 3
+
+    # Order the node labels before comparing, since all graphs are undirected
+    if multiset:
+        es1 = [tuple(sorted(e[:2])) + e[2:] for e in es1]
+        es2 = [tuple(sorted(e[:2])) + e[2:] for e in es2]
+    else:
+        es1 = [tuple(sorted(e)) for e in es1]
+        es2 = [tuple(sorted(e)) for e in es2]
+    return sorted(es1) == sorted(es2)
+
+
 def get_new_symbols(old_symbols, num_new):
     """
     Find new opt_einsum symbols to use for edges of a TN

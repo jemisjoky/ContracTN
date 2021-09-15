@@ -91,12 +91,10 @@ def test_add_hyperedge_node(order, use_dim, single_symbol, use_name, use_edge_sy
     if order == 0:
         with pytest.raises(Exception):
             node = tn.add_hyperedge_node(
-                order, dimension=dim, name=name, edge_symbols=edge_symbols
+                order, dim=dim, name=name, edge_symbols=edge_symbols
             )
         return
-    node = tn.add_hyperedge_node(
-        order, dimension=dim, name=name, edge_symbols=edge_symbols
-    )
+    node = tn.add_hyperedge_node(order, dim=dim, name=name, edge_symbols=edge_symbols)
 
     assert node.node_type == "hyper"
     assert node.name == (name if use_name else "node_0")

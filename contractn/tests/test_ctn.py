@@ -9,6 +9,7 @@ import numpy as np
 from hypothesis import given, strategies as st
 
 from ..ctn import TN
+from .utils_for_tests import assert_index_inverse
 
 
 @pytest.mark.parametrize("node_type", ["dense", "hyper"])
@@ -105,3 +106,35 @@ def test_connect_nodes(node_type, graph_topology, num_nodes):
 
     # Make sure _cleanup_edge_symbols doesn't introduce any errors
     tn._cleanup_edge_symbols()
+    assert_index_inverse(tn)
+
+
+@given(st.integers(2, 6), st.booleans(), st.booleans())
+def test_remove_edges(num_nodes, single_edges, use_names):
+    """
+    Form fully-connected TN then remove everything and verify we just have danglers
+    """
+    # Make fully-connected TN
+    tn = TN()
+    node_list = [
+        tn.add_dense_node(np.ones((2,) * (num_nodes - 1))) for _ in range(num_nodes)
+    ]
+    for i, j in combinations(range(num_nodes), 2):
+        tn.connect_nodes(node_list[i], node_list[j], j - 1, i)
+
+    # Remove all of the edges
+    print(len(tn.edges()))
+    if single_edges:
+        print("One by one")
+        for e in tn.edges():
+            tn.remove_edge(e.name if use_names else e)
+            print(" ", len(tn.edges()))
+    else:
+        print("All together")
+        tn.remove_edges_from([e.name for e in tn.edges()] if use_names else tn.edges())
+        print(" ", len(tn.edges()))
+
+    assert tn.num_dense == tn.num_cores == num_nodes
+    assert tn.num_duplicate == tn.num_hyperedge == tn.num_input == 0
+    assert len(tn.edges()) == len(tn.edge_symbols) == num_nodes * (num_nodes - 1)
+    assert all(e.dangler for e in tn.edges())

@@ -84,9 +84,9 @@ class TN:
 
         # Update the ordered edge list in node
         if node1.node_type != "dangler":
-            node1._edge_names[idx1] = edge_id
+            node1.dict["edge_names"][idx1] = edge_id
         if node2.node_type != "dangler":
-            node2._edge_names[idx2] = edge_id
+            node2.dict["edge_names"][idx2] = edge_id
 
         # Hyperedge tensors might need some rewriting of edge symbols
         if "hyper" in {node1.node_type, node2.node_type}:
@@ -94,6 +94,39 @@ class TN:
             self._cleanup_edge_symbols(naughty_node)
 
         return edge_id
+
+    def _remove_edges(self, edge_set):
+        """
+        Break bonds in the TN, leaving dangling edges
+        """
+        # Validate input
+        all_edges = self.G.edges
+        assert all(isinstance(e, Edge) for e in edge_set)
+        edge_names = tuple(e.name for e in edge_set)
+        assert all(e in all_edges for e in edge_names)
+
+        # For deleted edges, save all affected nodes and associated indices
+        aff_nodes, aff_idxs = [], []
+        for e in edge_set:
+            if e.dangler:
+                continue  # Dangling edges can't be removed
+            for n in e.name[:2]:
+                n = self[n]
+                aff_nodes.append(n)
+                aff_idxs.append(n.index(e))
+
+        # Remove the edges in networkx graph
+        self.G.remove_edges_from(edge_names)
+
+        # Add danglers to replace deleted edges
+        new_symbols = get_new_symbols(self.edge_symbols, len(aff_nodes))
+        assert len(aff_nodes) == len(aff_idxs) == len(new_symbols)
+        for n, idx, es in zip(aff_nodes, aff_idxs, new_symbols):
+            n.dict["edge_names"][idx] = self._new_dangler(n, idx, es)
+
+        # Hyperedge tensors might need some rewriting of edge symbols
+        if any(n.node_type == "hyper" for n in aff_nodes):
+            self._cleanup_edge_symbols()
 
     def add_dense_node(self, tensor, name=None, edge_symbols=None):
         """
@@ -171,6 +204,31 @@ class TN:
         self.G.remove_node(dang1), self.G.remove_node(dang2)
         self._init_edge(node1, node2, index1, index2, edge_symbol)
 
+    def remove_edge(self, edge):
+        """
+        Remove a single bond between two non-dangling nodes of the TN
+        """
+        assert isinstance(edge, (Edge, tuple))
+        if isinstance(edge, tuple):
+            edge = self.G.edges[edge]["tn_edge"]
+        self._remove_edges({edge})
+
+    def remove_edges_from(self, edge_set):
+        """
+        Remove several bonds between nodes in the TN, leaving dangling edges
+
+        Any edges which are already dangling will be left unchanged
+        """
+        # Validate input and convert to set of Edge instances
+        assert all(isinstance(e, (Edge, tuple)) for e in edge_set)
+        edge_set = tuple(edge_set)
+        name_edge = [isinstance(e, tuple) for e in edge_set]
+        edge_set = set(
+            self.G.edges[e]["tn_edge"] if ne else e
+            for e, ne in zip(edge_set, name_edge)
+        )
+        self._remove_edges(edge_set)
+
     def _new_node_name(self, name=None):
         """
         Create unused name for node, or check that proposed name is unused
@@ -215,6 +273,12 @@ class TN:
         """
         Simplify edge symbols by identifying symbols along connected hyperedges
         """
+
+        # TODO: Ensure that two regions have identical indices *only when*
+        #       they are connected by copy tensors. Code below merges indices,
+        #       but it doesn't handle the case when edges have been deleted,
+        #       creating more disconnected components
+
         G = self.G
         if naughty_node is None:
             # Get all connected clusters of hyperedge nodes
@@ -270,7 +334,7 @@ class TN:
             as_iter: Whether to return edges as an iterator or a tuple.
                 (Default: False)
         """
-        edge_iter = (d["tn_edge"] for _, _, d in self.G.edges.data())
+        edge_iter = (e for _, _, e in self.G.edges(data="tn_edge"))
         return edge_iter if as_iter else tuple(edge_iter)
 
     @property
@@ -323,3 +387,10 @@ class TN:
         if isinstance(node, Node):
             node = node.name
         return node in self.G
+
+    def __getitem__(self, name):
+        """
+        Return Node objects based on networkx name
+        """
+        assert name in self.G
+        return self.G.nodes[name]["tn_node"]

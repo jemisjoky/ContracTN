@@ -1,5 +1,6 @@
 from math import prod
 
+from .edges import Edge
 from .utils import (
     assert_valid_tensor,
     tensor_attr_error,
@@ -56,7 +57,7 @@ class Node:
         self.name = nx_name
         self.dict["node_type"] = node_type
         # Ordered list of edge names which gets populated by end of init
-        self._edge_names = [None] * n_edges
+        self.dict["edge_names"] = [None] * n_edges
 
         # List of NX edges is needed to order edges (they're unordered in NX)
         if node_type == "hyper":
@@ -96,11 +97,11 @@ class Node:
         assert len(self.shape) == len(edge_symbols)
         if node_type != "dangler":
             for i, s in enumerate(edge_symbols):
-                self._edge_names[i] = self.tn._new_dangler(self, i, s)
+                self.dict["edge_names"][i] = self.tn._new_dangler(self, i, s)
         else:
             # Don't need to create danglers for danglers, just get edge id
             assert len(self.G.edges(self.name)) == 0
-            self._edge_names = list(self.G.edges(self.name, keys=True))
+            self.dict["edge_names"] = list(self.G.edges(self.name, keys=True))
 
     @property
     def node_type(self):
@@ -121,8 +122,10 @@ class Node:
         """
         Ordered list of networkx labels for the edges connected to node
         """
-        assert edge_set_equality(self._edge_names, self.G.edges(self.name, keys=True))
-        return self._edge_names
+        assert edge_set_equality(
+            self.dict["edge_names"], self.G.edges(self.name, keys=True)
+        )
+        return self.dict["edge_names"]
 
     @property
     def edges(self):
@@ -145,7 +148,7 @@ class Node:
         Raises an error when the other node isn't a dangler
         """
         # Pull the corresponding node from the edge name, check it's good
-        edge_name = self._edge_names[idx]
+        edge_name = self.dict["edge_names"][idx]
         dang_name = opposite_node(edge_name, self.name)
         assert len(self.G[self.name][dang_name]) == 1  # Dangler has one edge
         return dang_name
@@ -285,6 +288,23 @@ class Node:
 
     def __getitem__(self, key):
         return self.G.edges[self.edge_names[key]]["tn_edge"]
+
+    def index(self, edge):
+        """
+        Lookup the index of node associated with given edge
+
+        This is the inverse operation to ``self.__getitem__``, meaning that
+        ``node.index(node[i]) == i`` and ``node[node.index(e)] == e``,
+        for all indices i of the node and edges e incident to the node.
+        """
+        if isinstance(edge, Edge):
+            edge = edge.name
+        edge_names = self.edge_names
+        assert edge in edge_names
+        return edge_names.index(edge)
+
+    def __repr__(self):
+        return f"Node(name={self.name}, node_type={self.node_type}, degree={self.ndim})"
 
 
 def check_node_args(node_type, kwdict):

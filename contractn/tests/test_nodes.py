@@ -7,6 +7,7 @@ import numpy as np
 from hypothesis import given, strategies as st
 
 from ..ctn import TN
+from .utils_for_tests import assert_index_inverse
 
 
 @given(st.integers(0, 3), st.booleans(), st.booleans())
@@ -30,6 +31,7 @@ def test_add_dense_node(order, use_name, use_edge_symbols):
     assert node.shape == tensor.shape
     assert node.edge_symbols == good_symbols
     assert node.size == node.numel == tensor.size
+    assert_index_inverse(tn)
 
     # Verify that we get errors for non-defined attributes
     for attr in ["base_node", "degree", "dim", "var_axes"]:
@@ -68,6 +70,7 @@ def test_add_duplicate_node(order, use_dense_name, use_name, use_edge_symbols):
     assert node.base_node is dense_node
     assert node.size == tensor.size
     assert node.numel == 0
+    assert_index_inverse(tn)
 
     # Verify that we get errors for non-defined attributes
     for attr in ["tensor", "degree", "dim", "var_axes"]:
@@ -111,6 +114,7 @@ def test_add_hyperedge_node(order, use_dim, single_symbol, use_name, use_edge_sy
     else:
         assert node.size is None
     assert node.numel == 0
+    assert_index_inverse(tn)
 
     # Verify that we get errors for non-defined attributes
     for attr in ["tensor", "base_node", "var_axes"]:
@@ -148,6 +152,7 @@ def test_add_input_node(order, use_var_axis, use_name, use_edge_symbols):
     else:
         assert node.size is None
     assert node.numel == 0
+    assert_index_inverse(tn)
 
     # Verify that we get errors for non-defined attributes
     for attr in ["tensor", "base_node", "degree", "dim"]:

@@ -47,4 +47,4 @@ class Edge:
 
     @property
     def dangler(self):
-        return any(n.node_type == "dangler" for n in self.nodes)
+        return any(n.dangler for n in self.nodes)

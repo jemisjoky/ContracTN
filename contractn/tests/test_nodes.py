@@ -25,7 +25,7 @@ def test_add_dense_node(order, use_name, use_edge_symbols):
     assert tn.num_duplicate == tn.num_hyperedge == tn.num_input == 0
     assert tn.num_dense == tn.num_cores == 1
     assert tn.edge_symbols == set(good_symbols)
-    assert all(n.node_type == "dangler" for n in node.neighbors)
+    assert all(n.dangler for n in node.neighbors)
 
     assert node.ndim == order
     assert node.shape == tensor.shape
@@ -62,7 +62,7 @@ def test_add_duplicate_node(order, use_dense_name, use_name, use_edge_symbols):
     assert tn.num_dense == tn.num_duplicate == 1
     assert tn.num_cores == 2
     assert tn.edge_symbols == dense_symbols.union(good_symbols)
-    assert all(n.node_type == "dangler" for n in node.neighbors)
+    assert all(n.dangler for n in node.neighbors)
 
     assert node.ndim == order
     assert node.shape == tensor.shape
@@ -104,7 +104,7 @@ def test_add_hyperedge_node(order, use_dim, single_symbol, use_name, use_edge_sy
     assert tn.num_duplicate == tn.num_dense == tn.num_input == 0
     assert tn.num_hyperedge == tn.num_cores == 1
     assert tn.edge_symbols == set(good_symbols)
-    assert all(n.node_type == "dangler" for n in node.neighbors)
+    assert all(n.dangler for n in node.neighbors)
 
     assert node.ndim == order
     assert node.shape == good_shape
@@ -142,7 +142,7 @@ def test_add_input_node(order, use_var_axis, use_name, use_edge_symbols):
     assert tn.num_duplicate == tn.num_hyperedge == tn.num_dense == 0
     assert tn.num_input == tn.num_cores == 1
     assert tn.edge_symbols == set(good_symbols)
-    assert all(n.node_type == "dangler" for n in node.neighbors)
+    assert all(n.dangler for n in node.neighbors)
 
     assert node.ndim == order
     assert node.shape == tuple(-1 if i in var_axes else d for i, d in enumerate(shape))

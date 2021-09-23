@@ -6,6 +6,7 @@ import networkx as nx
 
 from .nodes import Node
 from .edges import Edge
+from .einsum import get_einstring
 from .utils import assert_valid_tensor, assert_valid_symbol, get_new_symbols
 
 
@@ -83,9 +84,9 @@ class TN:
         Edge(self, edge_id, new_dim, edge_symbol)
 
         # Update the ordered edge list in node
-        if node1.node_type != "dangler":
+        if not node1.dangler:
             node1.dict["edge_names"][idx1] = edge_id
-        if node2.node_type != "dangler":
+        if not node2.dangler:
             node2.dict["edge_names"][idx2] = edge_id
 
         # Hyperedge tensors might need some rewriting of edge symbols
@@ -306,7 +307,7 @@ class TN:
             for _, _, d in G.edges.data():
                 d["symbol"] = best_symbol
 
-    def nodes(self, as_iter=False, danglers=False):
+    def nodes(self, as_iter=False, hyperedges=True, danglers=False):
         """
         Iterator over the Node objects contained in the TN
 
@@ -322,8 +323,10 @@ class TN:
                 the order they were added.
         """
         node_iter = (d["tn_node"] for n, d in self.G.nodes.data())
-        if not danglers:
-            node_iter = (n for n in node_iter if n.node_type != "dangler")
+        node_iter = filter(
+            lambda n: (hyperedges or not n.hyperedge) and (danglers or not n.dangler),
+            node_iter,
+        )
         return node_iter if as_iter else tuple(node_iter)
 
     def edges(self, as_iter=False):

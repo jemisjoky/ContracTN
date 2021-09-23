@@ -95,7 +95,7 @@ class Node:
 
         # Create requisite number of dangling nodes, save list of NX edge ids
         assert len(self.shape) == len(edge_symbols)
-        if node_type != "dangler":
+        if not self.dangler:
             for i, s in enumerate(edge_symbols):
                 self.dict["edge_names"][i] = self.tn._new_dangler(self, i, s)
         else:
@@ -109,6 +109,14 @@ class Node:
         Type of the node
         """
         return self.dict["node_type"]
+
+    @property
+    def dangler(self):
+        return self.node_type == "dangler"
+
+    @property
+    def hyperedge(self):
+        return self.node_type == "hyperedge"
 
     @property
     def G(self):
@@ -140,6 +148,19 @@ class Node:
         Ordered list of symbols associated with modes of the underlying tensor
         """
         return tuple(e.symbol for e in self.edges)
+
+    @property
+    def symbol(self):
+        """
+        Return the symbol associated to a dangling node
+
+        Returns an error for standard (non-dangling) nodes, in this case use
+        ``Node.edge_symbols`` instead.
+        """
+        symbols = self.edge_symbols
+        assert len(symbols) == 1
+        assert self.is_dangler
+        return symbols[0]
 
     def _dang_name(self, idx):
         """
@@ -212,7 +233,7 @@ class Node:
                 -1 if i in self.var_axes else d
                 for i, d in enumerate(self.dict["_shape"])
             )
-        elif self.node_type == "dangler":
+        elif self.dangler:
             return (-1,)
 
     @property

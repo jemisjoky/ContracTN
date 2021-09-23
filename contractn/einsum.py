@@ -2,8 +2,6 @@ import operator
 from functools import lru_cache, reduce
 
 import opt_einsum as oe
-
-# Computational functions from opt_einsum
 from opt_einsum.backends import get_func
 from opt_einsum.contract import parse_backend, _einsum, _tensordot, _transpose
 
@@ -12,6 +10,14 @@ from opt_einsum.contract import parse_backend, _einsum, _tensordot, _transpose
 def _zeros(shape, backend):
     """
     Base function for initializing all-zeros tensor
+    """
+    zeros = get_func("zeros", backend)
+    return zeros(shape)
+
+
+def _ones(shape, backend):
+    """
+    Base function for initializing all-ones tensor
     """
     zeros = get_func("zeros", backend)
     return zeros(shape)

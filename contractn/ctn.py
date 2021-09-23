@@ -60,8 +60,8 @@ class TN:
         # Validate input
         assert isinstance(node1, Node) and isinstance(node2, Node)
         assert_valid_symbol(edge_symbol)
-        assert 0 <= idx1 < len(node1.shape)
-        assert 0 <= idx2 < len(node2.shape)
+        assert -len(node1.shape) <= idx1 < len(node1.shape)
+        assert -len(node2.shape) <= idx2 < len(node2.shape)
         assert node1 in self
         assert node2 in self
 

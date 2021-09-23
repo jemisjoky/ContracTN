@@ -14,8 +14,8 @@ from .utils_for_tests import assert_index_inverse
 
 @pytest.mark.parametrize("node_type", ["dense", "hyper"])
 @pytest.mark.parametrize("graph_topology", ["path", "complete"])
-@given(st.integers(2, 6))
-def test_connect_nodes(node_type, graph_topology, num_nodes):
+@given(st.integers(2, 6), st.booleans())
+def test_connect_nodes(node_type, graph_topology, num_nodes, neg_indices):
     """
     Connect dense or hyperedge nodes in some topology, verify things look good
     """
@@ -40,7 +40,8 @@ def test_connect_nodes(node_type, graph_topology, num_nodes):
         # Connect nodes together
         for i in range(num_nodes - 1):
             node1, node2 = node_list[i], node_list[(i + 1)]
-            tn.connect_nodes(node1, node2, 2, 1)
+            indices = (-1, -2) if neg_indices else (2, 1)
+            tn.connect_nodes(node1, node2, *indices)
 
         # Check global config
         assert len(tn.nodes()) == tn.num_cores == num_nodes
@@ -81,7 +82,8 @@ def test_connect_nodes(node_type, graph_topology, num_nodes):
 
         # Connect nodes together
         for i, j in combinations(range(num_nodes), 2):
-            tn.connect_nodes(node_list[i], node_list[j], j, i + 1)
+            indices = (j - num_nodes, i + 1 - num_nodes) if neg_indices else (j, i + 1)
+            tn.connect_nodes(node_list[i], node_list[j], *indices)
 
         # Check global config
         assert len(tn.nodes()) == tn.num_cores == num_nodes

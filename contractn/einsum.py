@@ -296,3 +296,74 @@ def _contract_path(einstr, operand_shapes, **kwargs):
     kwargs["einsum_call"] = True
     _, contract_list = oe.contract_path(einstr, *operand_shapes, **kwargs)
     return contract_list
+
+
+def _core_contract(
+    operands, contract_list, backend, **einsum_kwargs
+):
+    """
+    Inner loop used to perform an actual stabilized contraction given the output
+    from a ``contract_path(..., einsum_call=True)`` call.
+    """
+    backend = parse_backend(operands, backend)
+
+    # try and do as much as possible without einsum if not available
+    no_einsum = not oe.backends.has_einsum(backend)
+
+    # Register for holding the log scale
+    log_scale = _zeros((), backend)
+
+    # Start contraction loop
+    for num, contraction in enumerate(contract_list):
+        inds, idx_rm, einsum_str, _, blas_flag = contraction
+
+        tmp_operands = [operands.pop(x) for x in inds]
+
+        # Call tensordot (check if should prefer einsum, but only if available)
+        if blas_flag and ("EINSUM" not in blas_flag or no_einsum):
+
+            # Checks have already been handled
+            input_str, results_index = einsum_str.split("->")
+            input_left, input_right = input_str.split(",")
+
+            tensor_result = "".join(
+                s for s in input_left + input_right if s not in idx_rm
+            )
+
+            if idx_rm:
+                # Find indices to contract over
+                left_pos, right_pos = [], []
+                for s in idx_rm:
+                    left_pos.append(input_left.find(s))
+                    right_pos.append(input_right.find(s))
+
+                # Construct the axes tuples in a canonical order
+                axes = tuple(zip(*sorted(zip(left_pos, right_pos))))
+            else:
+                # Ensure axes is always pair of tuples
+                axes = ((), ())
+
+            # Contract!
+            new_view = _tensordot(*tmp_operands, axes=axes, backend=backend)
+
+            # Build a new view if needed
+            if tensor_result != results_index:
+
+                transpose = tuple(map(tensor_result.index, results_index))
+                new_view = _transpose(new_view, axes=transpose, backend=backend)
+
+        # Call einsum
+        else:
+            # Do the contraction
+            new_view = _einsum(
+                einsum_str, *tmp_operands, backend=backend, **einsum_kwargs
+            )
+
+        # Rescale contraction output to avoid underflow/overflow
+        new_view, log_scale = stabilize(new_view, log_scale, backend)
+
+        # Append new items and dereference what we can
+        operands.append(new_view)
+        del tmp_operands, new_view
+
+    return operands[0], log_scale

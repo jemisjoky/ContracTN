@@ -29,7 +29,7 @@ format:
 
 .PHONY: style
 style:
-	flake8
+	flake8 contractn/
 
 .PHONY: test
 test:

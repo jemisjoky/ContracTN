@@ -2,11 +2,9 @@ from collections import Counter
 
 import networkx as nx
 
-# import opt_einsum as oe
-
 from .nodes import Node
 from .edges import Edge
-from .einsum import get_einstring
+from .einsum import make_einstring, make_arg_packer, contract
 from .utils import assert_valid_tensor, assert_valid_symbol, get_new_symbols
 
 
@@ -339,6 +337,76 @@ class TN:
         """
         edge_iter = (e for _, _, e in self.G.edges(data="tn_edge"))
         return edge_iter if as_iter else tuple(edge_iter)
+
+    def make_contract_fun(self, optimize="auto", log_format=False):
+        """
+        Returns function contracting TN core tensors and inputs into single tensor
+
+        The function has signature ``contract_fun(params, inputs)``, where
+        ``params`` is a sequence of all unique parameter tensors of the TN, and
+        ``inputs`` is a sequence of all inputs to assign to input nodes.
+
+        When `log_format` is requested, the output of ``contract_fun`` will
+        be split in two parts, the first giving the rescaled contraction output
+        and the second giving the logarithm of the scalar rescaling factor.
+
+        Args:
+            optimize: String specifying the algorithm used to optimize the
+                contraction order inside `opt_einsum`. Options include:
+                `"optimal"`, `"dp"`, `"greedy"`, `"random-greedy"`,
+                `"random-greedy-128"`, `"branch-all"`, `"branch-2"`,
+                `"auto"`, `"auto-hq"`.
+                See ``opt_einsum.contract`` for a complete description of these
+                optimization algorithms.
+            log_format: Whether or not to split output of ``contract_fun`` into
+                a rescaled tensor and log scale factor.
+        """
+        # Get einstring and argument packer from TN layout
+        einstr = make_einstring(self)
+        arg_packer = make_arg_packer(self)
+
+        nn, ni = self.num_cores, self.num_input
+
+        def contract_fun(params, inputs):
+            f"""
+            Function contracting TN with {nn} cores, of which {ni} are inputs
+            """
+            operands = arg_packer(params, inputs)
+            return contract(einstr, *operands, optimize=optimize, log_format=log_format)
+
+        return contract_fun
+
+    def contract(self, inputs, optimize="auto", log_format=False):
+        """
+        Contract the TN with input tensors, return result as a dense tensor
+
+        Args:
+            inputs: Sequence of input tensors for each input node in TN.
+            optimize: String specifying the algorithm used to optimize the
+                contraction order inside `opt_einsum`. Options include:
+                `"optimal"`, `"dp"`, `"greedy"`, `"random-greedy"`,
+                `"random-greedy-128"`, `"branch-all"`, `"branch-2"`,
+                `"auto"`, `"auto-hq"`.
+                See ``opt_einsum.contract`` for a complete description of these
+                optimization algorithms.
+            log_format: Whether to split contraction result into two pieces,
+                the first a rescaled output and the second the logarithm of
+                the rescaling factor.
+        """
+        contract_fun = self.make_contract_fun(optimize=optimize, log_format=log_format)
+        return contract_fun(self.params, inputs)
+
+    @property
+    def params(self):
+        """
+        Give tuple of all unique parameter tensors defining the TN
+        """
+        param_list = []
+        for node in self.nodes(as_iter=True, hyperedges=False, danglers=False):
+            if node.node_type == "dense":
+                param_list.append(node.tensor)
+
+        return tuple(param_list)
 
     @property
     def num_dense(self):

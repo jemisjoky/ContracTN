@@ -143,7 +143,7 @@ def make_arg_packer(tn):
     assert len(set(op_inds)) == len(op_inds)
     np, ni, no = len(param_list), len(input_list), operand_count
 
-    def arg_grabber(params, inputs):
+    def arg_packer(params, inputs):
         f"""
         Function packing {np} params and {ni} inputs into {no} einsum operands
         """
@@ -160,7 +160,7 @@ def make_arg_packer(tn):
         assert all(op is not None for op in operands)
         return tuple(operands)
 
-    return arg_grabber
+    return arg_packer
 
 
 def contract(*operands, **kwargs):
@@ -298,9 +298,7 @@ def _contract_path(einstr, operand_shapes, **kwargs):
     return contract_list
 
 
-def _core_contract(
-    operands, contract_list, backend, **einsum_kwargs
-):
+def _core_contract(operands, contract_list, backend, **einsum_kwargs):
     """
     Inner loop used to perform an actual stabilized contraction given the output
     from a ``contract_path(..., einsum_call=True)`` call.

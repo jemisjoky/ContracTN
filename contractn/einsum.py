@@ -2,44 +2,62 @@ import operator
 from functools import lru_cache, reduce
 
 import opt_einsum as oe
-from opt_einsum.backends import get_func
 from opt_einsum.contract import parse_backend, _einsum, _tensordot, _transpose
+
+# Special-purpose backend tools needed for Pytorch, since
+# it is treated differently in opt_einsum.backends
+torch_cache = {}
+
+
+def torch_load(fun_name):
+    """
+    Load a Pytorch function, caching results
+    """
+    if fun_name not in torch_cache:
+        import torch
+
+        assert hasattr(torch, fun_name)
+        torch_cache[fun_name] = getattr(torch, fun_name)
+    return torch_cache[fun_name]
+
+
+def get_func(fun_name, backend):
+    if backend == "torch":
+        return torch_load(fun_name)
+    else:
+        return oe.backends.get_func(fun_name, backend)
 
 
 # Some other functions I need for stabilizing the computation
-def _zeros(shape, backend):
+def zeros(shape, backend):
     """
     Base function for initializing all-zeros tensor
     """
-    zeros = get_func("zeros", backend)
-    return zeros(shape)
+    return get_func("zeros", backend)(shape)
 
 
-def _ones(shape, backend):
+def ones(shape, backend):
     """
     Base function for initializing all-ones tensor
     """
-    zeros = get_func("zeros", backend)
-    return zeros(shape)
+    return get_func("ones", backend)(shape)
 
 
-def _where(cond, x, y, backend):
+def where(cond, x, y, backend):
     """
     Base function for conditionally choosing elements from two tensors
     """
-    where = get_func("where", backend)
-    return where(cond, x, y)
+    return get_func("where", backend)(cond, x, y)
 
 
-def _abs(x, backend):
+def abs_fun(x, backend):
     """
     Base function for elementwise absolute value
     """
-    abs_func = get_func("abs", backend)
-    return abs_func(x)
+    return get_func("abs", backend)(x)
 
 
-def _log(x, backend):
+def log(x, backend):
     """
     Base function for elementwise logarithm of tensor
     """
@@ -48,7 +66,7 @@ def _log(x, backend):
     return get_func("log", backend)(x)
 
 
-def _exp(x, backend):
+def exp(x, backend):
     """
     Base function for elementwise exponential of tensor
     """
@@ -57,7 +75,7 @@ def _exp(x, backend):
     return get_func("exp", backend)(x)
 
 
-def _sum(x, backend):
+def sum_fun(x, backend):
     """
     Base function for summing all elements in a tensor
     """
@@ -76,15 +94,15 @@ def stabilize(tensor, log_scale, backend):
     min_norm = 1e-7
 
     # Find rescale factor so elements of tensor have average norm of 1
-    norm = _sum(_abs(tensor, backend), backend)
+    norm = sum_fun(abs_fun(tensor, backend), backend)
     numel = reduce(operator.mul, tensor.shape, 1)
     rescale = norm / numel
 
     # Rescale only if norm is non-negligible (avoids division by zero)
     rescale_cond = norm > min_norm
-    tensor = _where(rescale_cond, tensor / rescale, tensor, backend)
-    log_scale = _where(
-        rescale_cond, log_scale + _log(rescale_cond, backend), log_scale, backend
+    tensor = where(rescale_cond, tensor / rescale, tensor, backend)
+    log_scale = where(
+        rescale_cond, log_scale + log(rescale, backend), log_scale, backend
     )
     return tensor, log_scale
 
@@ -93,7 +111,7 @@ def destabilize(tensor, log_scale, backend):
     """
     Transfer norm from log_scale register back into tensor
     """
-    return tensor * _exp(log_scale, backend)
+    return tensor * exp(log_scale, backend)
 
 
 def make_einstring(tn):
@@ -262,6 +280,7 @@ def contract(*operands, **kwargs):
     log_format = kwargs.pop("log_format", False)
     memory_limit = kwargs.pop("memory_limit", None)
     backend = kwargs.pop("backend", "auto")
+    backend = parse_backend(operands[1:], backend)
 
     # Make sure remaining keywords are valid for einsum
     unknown_kwargs = [k for (k, v) in kwargs.items() if k not in valid_einsum_kwargs]
@@ -272,7 +291,7 @@ def contract(*operands, **kwargs):
 
     # Build the contraction list from shapes, which is cached
     assert isinstance(operands[0], str)
-    einstr, op_shapes = operands[0], [op.shape for op in operands[1:]]
+    einstr, op_shapes = operands[0], tuple(tuple(op.shape) for op in operands[1:])
     contract_list = _contract_path(
         einstr,
         op_shapes,
@@ -282,13 +301,13 @@ def contract(*operands, **kwargs):
     )
 
     result, log_scale = _core_contract(
-        operands, contract_list, backend, **einsum_kwargs
+        operands[1:], contract_list, backend, **einsum_kwargs
     )
 
     if log_format:
         return result, log_scale
     else:
-        return destabilize(result, log_scale)
+        return destabilize(result, log_scale, backend)
 
 
 @lru_cache()
@@ -309,13 +328,14 @@ def _core_contract(operands, contract_list, backend, **einsum_kwargs):
     Inner loop used to perform an actual stabilized contraction given the output
     from a ``contract_path(..., einsum_call=True)`` call.
     """
-    backend = parse_backend(operands, backend)
+    if isinstance(operands, tuple):
+        operands = list(operands)
 
     # try and do as much as possible without einsum if not available
     no_einsum = not oe.backends.has_einsum(backend)
 
     # Register for holding the log scale
-    log_scale = _zeros((), backend)
+    log_scale = zeros((), backend)
 
     # Start contraction loop
     for num, contraction in enumerate(contract_list):

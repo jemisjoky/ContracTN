@@ -157,10 +157,10 @@ class Node:
         Returns an error for standard (non-dangling) nodes, in this case use
         ``Node.edge_symbols`` instead.
         """
-        symbols = self.edge_symbols
-        assert len(symbols) == 1
-        assert self.is_dangler
-        return symbols[0]
+        assert self.dangler
+        edge_names = self.G.edges(self.name, data=True)
+        assert len(edge_names) == 1
+        return list(edge_names)[0][2]["symbol"]
 
     def _dang_name(self, idx):
         """

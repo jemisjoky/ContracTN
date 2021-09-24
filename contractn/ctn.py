@@ -376,7 +376,7 @@ class TN:
 
         return contract_fun
 
-    def contract(self, inputs, optimize="auto", log_format=False):
+    def contract(self, inputs=(), optimize="auto", log_format=False):
         """
         Contract the TN with input tensors, return result as a dense tensor
 

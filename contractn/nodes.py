@@ -115,8 +115,8 @@ class Node:
         return self.node_type == "dangler"
 
     @property
-    def hyperedge(self):
-        return self.node_type == "hyperedge"
+    def is_copy(self):
+        return self.node_type == "hyper"
 
     @property
     def G(self):
@@ -265,7 +265,7 @@ class Node:
     @property
     def degree(self):
         """
-        Degree of a hyperedge node
+        Degree of a copy node
         """
         # TODO: This is unnecessary, since this is equivalent to ndim. Perhaps
         #       make this a pseudonym for ndim?
@@ -276,7 +276,7 @@ class Node:
     @property
     def dim(self):
         """
-        Dimension of the edges of a hyperedge node
+        Dimension of the edges of a copy node
         """
         if self.node_type != "hyper":
             raise dim_attr_error(self.name, self.node_type)

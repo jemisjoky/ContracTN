@@ -22,7 +22,7 @@ def test_add_dense_node(order, use_name, use_edge_symbols):
 
     assert node.node_type == "dense"
     assert node.name == (name if use_name else "node_0")
-    assert tn.num_duplicate == tn.num_hyperedge == tn.num_input == 0
+    assert tn.num_duplicate == tn.num_copy == tn.num_input == 0
     assert tn.num_dense == tn.num_cores == 1
     assert tn.edge_symbols == set(good_symbols)
     assert all(n.dangler for n in node.neighbors)
@@ -58,7 +58,7 @@ def test_add_duplicate_node(order, use_dense_name, use_name, use_edge_symbols):
 
     assert node.node_type == "clone"
     assert node.name == (name if use_name else "node_1")
-    assert tn.num_hyperedge == tn.num_input == 0
+    assert tn.num_copy == tn.num_input == 0
     assert tn.num_dense == tn.num_duplicate == 1
     assert tn.num_cores == 2
     assert tn.edge_symbols == dense_symbols.union(good_symbols)
@@ -79,8 +79,8 @@ def test_add_duplicate_node(order, use_dense_name, use_name, use_edge_symbols):
 
 
 @given(st.integers(0, 3), st.booleans(), st.booleans(), st.booleans(), st.booleans())
-def test_add_hyperedge_node(order, use_dim, single_symbol, use_name, use_edge_symbols):
-    """Add hyperedge node and verify things look good"""
+def test_add_copy_node(order, use_dim, single_symbol, use_name, use_edge_symbols):
+    """Add copy node and verify things look good"""
     tn = TN()
     dim = 5 if use_dim else None
     name = "boring_core" if use_name else None
@@ -90,19 +90,19 @@ def test_add_hyperedge_node(order, use_dim, single_symbol, use_name, use_edge_sy
     good_symbols = (("a" if edge_symbols is None else "z"),) * order
     good_shape = ((dim if use_dim else -1),) * order
 
-    # We're not allowing zero order hyperedges
+    # We're not allowing zero order copy nodes
     if order == 0:
         with pytest.raises(Exception):
-            node = tn.add_hyperedge_node(
+            node = tn.add_copy_node(
                 order, dim=dim, name=name, edge_symbols=edge_symbols
             )
         return
-    node = tn.add_hyperedge_node(order, dim=dim, name=name, edge_symbols=edge_symbols)
+    node = tn.add_copy_node(order, dim=dim, name=name, edge_symbols=edge_symbols)
 
     assert node.node_type == "hyper"
     assert node.name == (name if use_name else "node_0")
     assert tn.num_duplicate == tn.num_dense == tn.num_input == 0
-    assert tn.num_hyperedge == tn.num_cores == 1
+    assert tn.num_copy == tn.num_cores == 1
     assert tn.edge_symbols == set(good_symbols)
     assert all(n.dangler for n in node.neighbors)
 
@@ -139,7 +139,7 @@ def test_add_input_node(order, use_var_axis, use_name, use_edge_symbols):
 
     assert node.node_type == "input"
     assert node.name == (name if use_name else "node_0")
-    assert tn.num_duplicate == tn.num_hyperedge == tn.num_dense == 0
+    assert tn.num_duplicate == tn.num_copy == tn.num_dense == 0
     assert tn.num_input == tn.num_cores == 1
     assert tn.edge_symbols == set(good_symbols)
     assert all(n.dangler for n in node.neighbors)

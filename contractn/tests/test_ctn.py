@@ -17,7 +17,7 @@ from .utils_for_tests import assert_index_inverse
 @given(st.integers(2, 6), st.booleans())
 def test_connect_nodes(node_type, graph_topology, num_nodes, neg_indices):
     """
-    Connect dense or hyperedge nodes in some topology, verify things look good
+    Connect dense or copy nodes in some topology, verify things look good
     """
     tn = TN()
     bond_dim = 2
@@ -30,7 +30,7 @@ def test_connect_nodes(node_type, graph_topology, num_nodes, neg_indices):
             node_method = tn.add_dense_node
         elif node_type == "hyper":
             args, kwargs = (3,), {"dim": bond_dim}
-            node_method = tn.add_hyperedge_node
+            node_method = tn.add_copy_node
 
         # Initialize nodes of the appropriate type
         node_list = []
@@ -49,12 +49,12 @@ def test_connect_nodes(node_type, graph_topology, num_nodes, neg_indices):
         assert len(tn.nodes(danglers=True)) == 2 * num_nodes + 2
         assert len(tn.edges()) == 2 * num_nodes + 1
         if node_type == "dense":
-            assert tn.num_hyperedge == 0
+            assert tn.num_copy == 0
             assert tn.num_dense == num_nodes
             assert len(tn.edge_symbols) == 2 * num_nodes + 1
         elif node_type == "hyper":
             assert tn.num_dense == 0
-            assert tn.num_hyperedge == num_nodes
+            assert tn.num_copy == num_nodes
             assert len(tn.edge_symbols) == 1
 
         # Check local config of each node
@@ -73,7 +73,7 @@ def test_connect_nodes(node_type, graph_topology, num_nodes, neg_indices):
             node_method = tn.add_dense_node
         elif node_type == "hyper":
             args, kwargs = (num_nodes,), {"dim": bond_dim}
-            node_method = tn.add_hyperedge_node
+            node_method = tn.add_copy_node
 
         # Initialize nodes
         node_list = []
@@ -91,12 +91,12 @@ def test_connect_nodes(node_type, graph_topology, num_nodes, neg_indices):
         assert len(tn.edges()) == (num_nodes ** 2 + num_nodes) / 2
         assert len(tn.nodes(danglers=True)) == 2 * num_nodes
         if node_type == "dense":
-            assert tn.num_hyperedge == 0
+            assert tn.num_copy == 0
             assert tn.num_dense == num_nodes
             assert len(tn.edge_symbols) == (num_nodes ** 2 + num_nodes) / 2
         elif node_type == "hyper":
             assert tn.num_dense == 0
-            assert tn.num_hyperedge == num_nodes
+            assert tn.num_copy == num_nodes
             assert len(tn.edge_symbols) == 1
 
         # Check local config of each node
@@ -137,6 +137,6 @@ def test_remove_edges(num_nodes, single_edges, use_names):
         print(" ", len(tn.edges()))
 
     assert tn.num_dense == tn.num_cores == num_nodes
-    assert tn.num_duplicate == tn.num_hyperedge == tn.num_input == 0
+    assert tn.num_duplicate == tn.num_copy == tn.num_input == 0
     assert len(tn.edges()) == len(tn.edge_symbols) == num_nodes * (num_nodes - 1)
     assert all(e.dangler for e in tn.edges())

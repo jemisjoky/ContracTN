@@ -151,12 +151,12 @@ class TN:
         )
         return self._init_node(node_type, name, edge_symbols, base_node=base_node)
 
-    def add_hyperedge_node(self, degree, dim=None, name=None, edge_symbols=None):
+    def add_copy_node(self, degree, dim=None, name=None, edge_symbols=None):
         """
-        Add a single hyperedge (copy) node to the tensor network
+        Add a single copy (hyperedge) node to the tensor network
         """
         node_type = "hyper"
-        # Edge symbol lists for hyperedge nodes contain single symbol
+        # Edge symbol lists for copy nodes contain single symbol
         if isinstance(edge_symbols, str):
             edge_symbols = [edge_symbols] * degree
         edge_symbols = self._new_edge_symbols(
@@ -261,7 +261,7 @@ class TN:
 
         if node_type in ("dense", "clone", "input"):
             num_new = degree
-        # Symbols are unique, except for hyperedge nodes
+        # Symbols are unique, except for copy nodes
         elif node_type == "hyper":
             num_new = 1
         new_symbols = get_new_symbols(self.edge_symbols, num_new)
@@ -270,7 +270,7 @@ class TN:
 
     def _cleanup_edge_symbols(self, naughty_node=None):
         """
-        Simplify edge symbols by identifying symbols along connected hyperedges
+        Simplify edge symbols by identifying symbols on connected copy nodes
         """
 
         # TODO: Ensure that two regions have identical indices *only when*
@@ -280,7 +280,7 @@ class TN:
 
         G = self.G
         if naughty_node is None:
-            # Get all connected clusters of hyperedge nodes
+            # Get all connected clusters of copy nodes
             hyper_nodes = [n for n, nt in G.nodes(data="node_type") if nt == "hyper"]
             hyper_comps = list(nx.connected_components(G.subgraph(hyper_nodes)))
             symbol_counts = [
@@ -294,7 +294,7 @@ class TN:
                     d["symbol"] = bs
 
         else:
-            # Get a single cluster of hyperedge nodes
+            # Get a single cluster of copy nodes
             assert naughty_node.node_type == "hyper"
             hyper_comp = nx.node_connected_component(G, naughty_node.name)
             symbol_count = Counter(
@@ -305,14 +305,15 @@ class TN:
             for _, _, d in G.edges.data():
                 d["symbol"] = best_symbol
 
-    def nodes(self, as_iter=False, hyperedges=True, danglers=False):
+    def nodes(self, as_iter=False, copy_nodes=True, danglers=False):
         """
         Iterator over the Node objects contained in the TN
 
         Args:
             as_iter: Whether to return nodes as an iterator or a tuple.
                 (Default: False)
-            danglers: Whether to include dangling nodes, used to
+            copy_nodes: Whether to include copy nodes. (Default: True)
+            danglers: Whether to include dangling nodes, which are used to
                 terminate an unconnected edge in the TN.
                 (Default: False)
 
@@ -322,7 +323,7 @@ class TN:
         """
         node_iter = (d["tn_node"] for n, d in self.G.nodes.data())
         node_iter = filter(
-            lambda n: (hyperedges or not n.hyperedge) and (danglers or not n.dangler),
+            lambda n: (copy_nodes or not n.is_copy) and (danglers or not n.dangler),
             node_iter,
         )
         return node_iter if as_iter else tuple(node_iter)
@@ -338,7 +339,7 @@ class TN:
         edge_iter = (e for _, _, e in self.G.edges(data="tn_edge"))
         return edge_iter if as_iter else tuple(edge_iter)
 
-    def make_contract_fun(self, optimize="auto", log_format=False):
+    def make_contract_fun(self, optimize="auto", split_format=False):
         """
         Returns function contracting TN core tensors and inputs into single tensor
 
@@ -346,7 +347,7 @@ class TN:
         ``params`` is a sequence of all unique parameter tensors of the TN, and
         ``inputs`` is a sequence of all inputs to assign to input nodes.
 
-        When `log_format` is requested, the output of ``contract_fun`` will
+        When `split_format` is requested, the output of ``contract_fun`` will
         be split in two parts, the first giving the rescaled contraction output
         and the second giving the logarithm of the scalar rescaling factor.
 
@@ -358,7 +359,7 @@ class TN:
                 `"auto"`, `"auto-hq"`.
                 See ``opt_einsum.contract`` for a complete description of these
                 optimization algorithms.
-            log_format: Whether or not to split output of ``contract_fun`` into
+            split_format: Whether or not to split output of ``contract_fun`` into
                 a rescaled tensor and log scale factor.
         """
         # Get einstring and argument packer from TN layout
@@ -372,11 +373,13 @@ class TN:
             Function contracting TN with {nn} cores, of which {ni} are inputs
             """
             operands = arg_packer(params, inputs)
-            return contract(einstr, *operands, optimize=optimize, log_format=log_format)
+            return contract(
+                einstr, *operands, optimize=optimize, split_format=split_format
+            )
 
         return contract_fun
 
-    def contract(self, inputs=(), optimize="auto", log_format=False):
+    def contract(self, inputs=(), optimize="auto", split_format=False):
         """
         Contract the TN with input tensors, return result as a dense tensor
 
@@ -389,11 +392,13 @@ class TN:
                 `"auto"`, `"auto-hq"`.
                 See ``opt_einsum.contract`` for a complete description of these
                 optimization algorithms.
-            log_format: Whether to split contraction result into two pieces,
+            split_format: Whether to split contraction result into two pieces,
                 the first a rescaled output and the second the logarithm of
                 the rescaling factor.
         """
-        contract_fun = self.make_contract_fun(optimize=optimize, log_format=log_format)
+        contract_fun = self.make_contract_fun(
+            optimize=optimize, split_format=split_format
+        )
         return contract_fun(self.params, inputs)
 
     @property
@@ -402,7 +407,7 @@ class TN:
         Give tuple of all unique parameter tensors defining the TN
         """
         param_list = []
-        for node in self.nodes(as_iter=True, hyperedges=False, danglers=False):
+        for node in self.nodes(as_iter=True, copy_nodes=False, danglers=False):
             if node.node_type == "dense":
                 param_list.append(node.tensor)
 
@@ -423,9 +428,9 @@ class TN:
         return len([n for n in self.nodes() if n.node_type == "clone"])
 
     @property
-    def num_hyperedge(self):
+    def num_copy(self):
         """
-        Returns the number of hyperedge nodes in the tensor network
+        Returns the number of copy nodes in the tensor network
         """
         return len([n for n in self.nodes() if n.node_type == "hyper"])
 

@@ -1,6 +1,6 @@
-# .PHONY: clean
-# clean:
-# 	rm -rf contractn.egg-info
+.PHONY: clean
+clean:
+	rm -rf contractn.egg-info
 # 	rm -rf .pytest_cache/
 
 # .PHONY: dev-requirements
@@ -19,9 +19,9 @@
 format:
 	black contractn/
 
-# .PHONY: install
-# install:
-# 	pip install -e .
+.PHONY: install
+install:
+	pip install -e .
 
 # .PHONY: requirements
 # requirements: requirements.txt

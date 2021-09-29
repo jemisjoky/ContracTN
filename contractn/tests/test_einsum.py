@@ -26,7 +26,7 @@ sole_backend = pytest.mark.parametrize("backend", backend_list[:1])
 )
 @settings(deadline=None)
 def test_contract_mps(
-    backend, max_bond_dim, max_input_dim, num_nodes, seed, log_format
+    backend, max_bond_dim, max_input_dim, num_nodes, seed, split_format
 ):
     """
     Connect all-one tensors as MPS, verify contraction gives correct result
@@ -52,8 +52,8 @@ def test_contract_mps(
         tn.connect_nodes(node1, node2, -1, -2 if i != num_nodes - 2 else -1)
 
     # Contract the TN and verify that we have the right output shape
-    output = tn.contract(log_format=log_format)
-    if log_format:
+    output = tn.contract(split_format=split_format)
+    if split_format:
         log_value = log(output[0], backend) + output[1]
     else:
         log_value = log(output, backend)
@@ -69,7 +69,7 @@ def test_contract_mps(
     #     node_method = tn.add_dense_node
     # elif node_type == "hyper":
     #     args, kwargs = (num_nodes,), {"dim": bond_dim}
-    #     node_method = tn.add_hyperedge_node
+    #     node_method = tn.add_copy_node
 
     # # Initialize nodes
     # node_list = []
@@ -86,12 +86,12 @@ def test_contract_mps(
     # assert len(tn.edges()) == (num_nodes ** 2 + num_nodes) / 2
     # assert len(tn.nodes(danglers=True)) == 2 * num_nodes
     # if node_type == "dense":
-    #     assert tn.num_hyperedge == 0
+    #     assert tn.num_copy == 0
     #     assert tn.num_dense == num_nodes
     #     assert len(tn.edge_symbols) == (num_nodes ** 2 + num_nodes) / 2
     # elif node_type == "hyper":
     #     assert tn.num_dense == 0
-    #     assert tn.num_hyperedge == num_nodes
+    #     assert tn.num_copy == num_nodes
     #     assert len(tn.edge_symbols) == 1
 
     # # Check local config of each node

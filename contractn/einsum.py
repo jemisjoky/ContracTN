@@ -121,7 +121,7 @@ def make_einstring(tn):
     # Build einsum terms and free symbols from the nodes of the TN
     ein_terms = []
     free_syms = []
-    for node in tn.nodes(as_iter=True, hyperedges=False, danglers=True):
+    for node in tn.nodes(as_iter=True, copy_nodes=False, danglers=True):
         if node.dangler:
             free_syms.append(node.symbol)
         else:
@@ -143,7 +143,7 @@ def make_arg_packer(tn):
     # NOTE: Whenever I convert from duplicate to template nodes, change the
     # above to avoid a dense node list, and to add a param_count counter.
 
-    for node in tn.nodes(as_iter=True, hyperedges=False, danglers=False):
+    for node in tn.nodes(as_iter=True, copy_nodes=False, danglers=False):
         if node.node_type == "dense":
             assert node.name not in dense_nodes
             dense_nodes[node.name] = len(dense_nodes)
@@ -191,7 +191,7 @@ def contract(*operands, **kwargs):
     r"""
     Einsum function with stabilized outputs, based on opt_einsum.contract
 
-    contract(subscripts, *operands, log_format=False, dtype=None, order="K",
+    contract(subscripts, *operands, split_format=False, dtype=None, order="K",
     casting="safe", use_blas=True, optimize=True, memory_limit=None, backend="numpy")
 
     Evaluates the Einstein summation convention on the operands. A drop in
@@ -201,7 +201,7 @@ def contract(*operands, **kwargs):
     Args:
         einstr (str): Einsum string describing the contraction layout.
         *operands (list of array_like): Sequence of tensors to be contracted together.
-        log_format (bool): Whether to split output into two parts, the first
+        split_format (bool): Whether to split output into two parts, the first
             giving a rescaled version of the output, and the second giving the
             logarithm of the scaling factor. This avoids underflow and overflow
             of large contraction networks.
@@ -277,7 +277,7 @@ def contract(*operands, **kwargs):
 
     # Grab non-einsum kwargs
     use_blas = kwargs.pop("use_blas", True)
-    log_format = kwargs.pop("log_format", False)
+    split_format = kwargs.pop("split_format", False)
     memory_limit = kwargs.pop("memory_limit", None)
     backend = kwargs.pop("backend", "auto")
     backend = parse_backend(operands[1:], backend)
@@ -304,7 +304,7 @@ def contract(*operands, **kwargs):
         operands[1:], contract_list, backend, **einsum_kwargs
     )
 
-    if log_format:
+    if split_format:
         return result, log_scale
     else:
         return destabilize(result, log_scale, backend)

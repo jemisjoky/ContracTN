@@ -111,6 +111,6 @@ varaxes_attr_error = partial(node_specific_attr_error, "input", "var_axes")
 full_node_names = {
     "dense": "dense",
     "clone": "duplicate",
-    "hyper": "hyperedge",
+    "hyper": "copy",
     "input": "input",
 }

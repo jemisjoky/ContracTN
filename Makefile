@@ -1,7 +1,7 @@
 .PHONY: clean
 clean:
 	rm -rf contractn.egg-info
-# 	rm -rf .pytest_cache/
+	rm -rf .pytest_cache/
 
 # .PHONY: dev-requirements
 # dev-requirements: dev_requirements.txt
@@ -33,4 +33,4 @@ style:
 
 .PHONY: test
 test:
-	pytest contractn/tests
+	pytest -x contractn/tests

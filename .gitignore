@@ -1,3 +1,4 @@
 .hypothesis/
 opt_einsum/
 __pycache__/
+contractn/notebooks/.ipynb_checkpoints/

@@ -278,31 +278,38 @@ class TN:
         #       but it doesn't handle the case when edges have been deleted,
         #       creating more disconnected components
 
+        # Get the subgraph containing only copy nodes and danglers
         G = self.G
+        hyper_nodes = [
+            n for n, nt in G.nodes(data="node_type") if nt in ["hyper", "dangler"]
+        ]
+        hyper_subG = G.subgraph(hyper_nodes)
+
         if naughty_node is None:
             # Get all connected clusters of copy nodes
-            hyper_nodes = [n for n, nt in G.nodes(data="node_type") if nt == "hyper"]
-            hyper_comps = list(nx.connected_components(G.subgraph(hyper_nodes)))
+            hyper_comps = list(nx.connected_components(hyper_subG))
             symbol_counts = [
                 Counter(es for _, _, es in G.edges(comp, data="symbol"))
                 for comp in hyper_comps
             ]
             best_symbols = [count.most_common(1)[0][0] for count in symbol_counts]
+            # TODO: Write tests involving connected copy nodes, verify the
+            # following code works
             for bs, comp in zip(best_symbols, hyper_comps):
                 assert_valid_symbol(bs)
-                for _, _, d in G.edges.data():
+                for _, _, d in G.subgraph(comp).edges.data():
                     d["symbol"] = bs
 
         else:
             # Get a single cluster of copy nodes
             assert naughty_node.node_type == "hyper"
-            hyper_comp = nx.node_connected_component(G, naughty_node.name)
+            hyper_comp = nx.node_connected_component(hyper_subG, naughty_node.name)
             symbol_count = Counter(
                 es for _, _, es in G.edges(hyper_comp, data="symbol")
             )
             best_symbol = symbol_count.most_common(1)[0][0]
             assert_valid_symbol(best_symbol)
-            for _, _, d in G.edges.data():
+            for _, _, d in G.subgraph(hyper_comp).edges.data():
                 d["symbol"] = best_symbol
 
     def nodes(self, as_iter=False, copy_nodes=True, danglers=False):
@@ -363,7 +370,7 @@ class TN:
                 a rescaled tensor and log scale factor.
         """
         # Get einstring and argument packer from TN layout
-        einstr = make_einstring(self)
+        einstr = self.einsum_str
         arg_packer = make_arg_packer(self)
 
         nn, ni = self.num_cores, self.num_input
@@ -400,6 +407,13 @@ class TN:
             optimize=optimize, split_format=split_format
         )
         return contract_fun(self.params, inputs)
+
+    @property
+    def einsum_str(self):
+        """
+        Return a representation of the TN as einsum-style string
+        """
+        return make_einstring(self)
 
     @property
     def params(self):

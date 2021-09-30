@@ -140,3 +140,31 @@ def test_remove_edges(num_nodes, single_edges, use_names):
     assert tn.num_duplicate == tn.num_copy == tn.num_input == 0
     assert len(tn.edges()) == len(tn.edge_symbols) == num_nodes * (num_nodes - 1)
     assert all(e.dangler for e in tn.edges())
+
+
+def test_copy_node_einstring():
+    """
+    Initialize 3rd-order CP decomposition and verify its einstring is correct
+
+    Based on an issue that came up when finding code samples for the CTN paper.
+    """
+    cp = TN()
+
+    # Add central "hub" core
+    cp_hub = cp.add_copy_node(3)
+
+    # Connect hub to three factor matrices
+    for i in range(3):
+        mat = np.eye(4, 10)
+        cp_mat = cp.add_dense_node(mat)
+        cp.connect_nodes(cp_hub, cp_mat, i, 0)
+
+    # Get einstring and verify it is correctly formatted
+    einstr = cp.einsum_str
+    inputs, output = einstr.split("->")
+    inputs = inputs.split(",")
+    first_symbols = [s[0] for s in inputs]
+    last_symbols = [s[1] for s in inputs]
+    assert len(set(first_symbols)) == 1
+    assert len(set(last_symbols)) == 3
+    assert output == "".join(last_symbols)

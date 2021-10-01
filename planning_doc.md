@@ -85,7 +85,7 @@ What are some purely linear-algebraic attributes that ctn.TN nodes have which nx
 * Maybe a `tn` node, which contains an entire underlying TN. How feasible would this be to carry out? I'd need some functionality to flatten this, adding all internal nodes and edges into the parent TN, and this would need to be carried out near the end of any conversion into a computable output. This would actually be a pretty cool idea, and the main practical restriction would be internal information to the child networks would be inaccessible to the parent network, and vice versa. Not a big limitation though, and this could really open the door to modularization in TNs.
 
 
-## Relationship between custom classes and NetworkX objects
+## Relationship between ContracTN classes and NetworkX objects
 
 Finally implemented all of the custom classes for edges, nodes, and NX graphs, and the layout is really elegant. One pattern I've found very useful is keeping a pointer to the custom class (`Edge`, `Node`, or `TN`) inside the attribute dictionary of the corresponding NX object. This way I can freely transform between custom objects and NX equivalents, but I just realized there's something a bit cooler than this.
 

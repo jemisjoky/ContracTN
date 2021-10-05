@@ -123,6 +123,50 @@ A similar thing goes for scalars, which can be treated as nodes or not nodes, de
 Also, multiple edges are completely allowed, but make sure we have a normal form function for merging all parallel edges together.
 
 
+## Relationship between NetworkX dicts and ContracTN objects
+
+NetworkX is structured as a dict-of-dict-of-dicts, and maybe another layer if we have real multigraphs. This is totally sufficient for capturing any of the nested relationship among TNs, cores, and bonds. However, I need to have some formal guarantees about the dependence of ctn objects on nx structure, so as to better modularize functions in the library.
+
+Here's a good start: Each ctn object is just a dict augmented with functional properties based on the values in the dict. The methods we have in ctn can be divided into functional and state-altering methods, with the latter a constant pain-in-my-ass to implement without bugs. State-altering methods will typically change both the graph structure and the dict-info, and the logical ordering of these two changes will depend on the particulars of the method. Either way though, keep in mind to **always finish both of these changes before invoking other state changing methods**. That way, you can always treat ctn objects as a coherent data structure satisfying a bunch of nice assumptions at all times no matter what.
+
+How easily can I wrap nx operations into ctn methods under this assumption of coherence? Well, the nx operations change the structure of the graph, but don't ever change the data. For easiest wrapping, assume that as many TN properties as possible are preserved during the nx operations. This will generally be the case, but sometimes operations can get ill-formed by matching bond restrictions. Oh, but if all tensor modes are assumed to have identical bond dimensions, then in this setting we'll generically have all nx operations leaving ctn structures still good.
+
+NetworkX operations should be wrapped in this light, into thoughtful coherent operations based on the structural properties of general TNs. This type of modularization will help with developing complex high-level operations, such as the use of "composite cores" containing entire TNs in their node dict.
+
+BTW as a terminology thing, let's standardize the following usage:
+
+    nx term  | ctn term
+    -------------------
+      graph  |   tn
+      node   |  core
+      edge   |  bond
+
+That way we can keep the two formally separate, while still knowing that much of the structure of the former carries over to the latter.
+
+Let's set aside some time next week to restructure my existing ctn code so it follows this pragma. A good first challenge is how to deal with the copy tensor connectivity issue I ran into during the ctn position paper for QTNML. See how that's best modularized, and make sure to add assumptions whenever it allows us to leverage all of the cool out-of-the-box functionality of NetworkX.
+
+Another desideratum we'd like to have is for the updates to TN properties (dict functionals) to be mediated entirely by the structure of the graph. Namely, if a properties of one node depends on the properties of another, then they better be neighbors, or satisfy some auxiliary assumption related to neighborhood in general. But unrestricted lookup to Graph.nodes and Graph.edges is off-limits.
+
+Lots of cool structure here, and a great opportunity to try my hand at functional-type programming constructions. But for now, let's get some sleep. You need to sleep. 
+
+Okay wait, one last cool idea. This might take some work, but see if you can learn about how each TN operation would be implemented in Graphs vs. Multigraphs vs. Digraphs. It adds some implementational hassle, but also means I can abstract away the type of nx graph from the choice of ctn operations.
+
+Also see how much of the inter-graph operations in nx you can wrap into ctn methods. What TN operations require specific graph structures, vs which ones can I get away with using generic nx calls? An example of the latter is computing the log correction factor (i.e. the negative log 2-norm) of a TN can be done by enumerating over all edges, no matter whether they're directed or parallel.
+
+Another good idea is to allow composite edges which are associated with a tensor product. This is actually a great way to reason about tensor reshaping, since the composite edges can absorb the "slack" in the tensor description left by the flattening of the cores. This also means that... ah, we won't ever have to use multigraphs again!!! That's great, I didn't like that shit anyways!
+
+Implementing the composite edges shouldn't be hard, and I should allow for the possibility that the array axes aren't actually flattened. That way, composite edges become just a quick cheap trick that doesn't necessarily have to change the underlying data (although they certainly can, depending on the operation).
+
+
+## Quick Note on XOR Cores
+
+An XOR core is a tensor `X` of arbitrary positive order n, whose elements are `X_{(x_i)_{i=1}^n} = (1 if sum(x_i for i in range(n)) % 2 == 0 else 0)`. These are useful for a lot of problems, including the method I've been looking at for formulating the Collatz conjecture as a TN contraction.
+
+XOR tensors are just copy tensors conjugated on all indices by Hadamard gates, so this is really straightforward to implement in CTN. It would be interesting to see if I could implement a purely TN method for efficiently verifying the Collatz conjecture for a finite collection of starting values, in a manner which scales linearly in the maximum value attained during the Collatz iterations.
+
+For the Hadamards, it would always be possible to implement a graph transformation preprocessing rule, which removes all chains of an even number of Hadamards before contraction. I don't know if this would be worth it to write this functionality, but it's at least possible and not too hard.
+
+
 ## Unresolved Questions
 
 * How do I ensure that all the lovely behavior I'm adding is JAX-friendly? Practically, keep a running collection of JAX examples in my tests, and check as I develop new features which JAX-specific things break (I'm looking at you, JIT). In terms of overall design, I'm not sure, but handling the customizable behavior in contraction seems like a worthwhile design challenge.

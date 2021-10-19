@@ -13,7 +13,7 @@ from .utils import (
 )
 
 # Collection of node types which are currently supported
-NODE_TYPES = ("dense", "clone", "hyper", "input", "dangler")
+NODE_TYPES = ("dense", "clone", "hyper", "input")
 
 # Mandatory and optional information which needs to be given for each node type
 NODE_ARGS = {
@@ -35,13 +35,77 @@ NODE_ARGS = {
         {"shape", "var_axes"},
         set(),
     ),
-    "dangler": (set(), set()),
 }
 
 
 class Node:
     """
-    Generic node of a TN, which wraps the corresponding node in NetworkX
+    Generic node of a graph, which wraps the corresponding node in NetworkX
+
+    This gets subclassed by both Core and Hyperedge, which respectively handle
+    tensor cores and hyperedges of the TN
+    """
+
+    def __init__(self, name, parent_tn, is_core):
+        # Basic NX node setup, with pointers to parent_tn and Node instance
+        self.name = name
+        self.tn = parent_tn
+        assert name not in self.tn.G
+        self.tn.G.add_node(name, tn=parent_tn, node=self, bipartite=int(is_core))
+
+    @property
+    def G(self):
+        """
+        Networkx graph underlying the node's parent TN
+        """
+        return self.tn.G
+
+    @property
+    def dict(self):
+        """
+        Attribute dictionary associated to the corresponding NetworkX node
+        """
+        return self.tn.G.nodes[self.name]
+
+    @property
+    def is_core(self):
+        """
+        Whether the node is a tensor core (``True``) or a hyperedge (``False``)
+        """
+        return bool(self.dict["bipartite"])
+
+    @property
+    def degree(self):
+        """
+        Number of neighbors (either cores or hyperedges) of the node
+        """
+        return self.tn.G.degree[self.name]
+
+    @property
+    def neighbors(self, names_only=False):
+        """
+        List of nodes which connect to the given node
+        """
+        if names_only:
+            return tuple(self.tn.G.adj[self.name])
+        else:
+            return tuple(self.tn.G.nodes[n]["node"] for n in self.tn.G.adj[self.name])
+
+    def __repr__(self):
+        node_class = "Core" if self.is_core else "Hyperedge"
+        return (
+            f"'{node_class}(name={self.name}, degree={self.degree}, "
+            f"neighbors={self.neighbors}, attr_dict={self.dict})'"
+        )
+
+    def __str__(self):
+        node_class = "Core" if self.is_core else "Hyperedge"
+        return f"{node_class}(name={self.name}, degree={self.degree})"
+
+
+class Core(Node):
+    """
+    General tensor core, whose data is structured as one of several core types
     """
 
     def __init__(self, parent_tn, node_type, nx_name, edge_symbols, **kwargs):

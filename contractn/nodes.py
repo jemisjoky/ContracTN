@@ -3,39 +3,14 @@ from math import prod
 from .edges import Edge
 from .utils import (
     assert_valid_tensor,
+    assert_valid_symbol,
     tensor_attr_error,
     basenode_attr_error,
     degree_attr_error,
     dim_attr_error,
     varaxes_attr_error,
-    opposite_node,
     edge_set_equality,
 )
-
-# Collection of node types which are currently supported
-NODE_TYPES = ("dense", "clone", "hyper", "input")
-
-# Mandatory and optional information which needs to be given for each node type
-NODE_ARGS = {
-    "dense": (
-        {"tensor"},
-        set(),
-    ),
-    "clone": (
-        {"base_node"},
-        set(),
-    ),
-    "hyper": (
-        {"degree"},
-        {
-            "dim",
-        },
-    ),
-    "input": (
-        {"shape", "var_axes"},
-        set(),
-    ),
-}
 
 
 class Node:
@@ -75,16 +50,17 @@ class Node:
         return bool(self.dict["bipartite"])
 
     @property
-    def degree(self):
+    def _nx_degree(self):
         """
-        Number of neighbors (either cores or hyperedges) of the node
+        Number of neighbors of the node
         """
         return self.tn.G.degree[self.name]
 
     @property
-    def neighbors(self, names_only=False):
+    def _nx_neighbors(self, names_only=False):
         """
-        List of nodes which connect to the given node
+        List of nodes which connect to the given node. These are hyperedges if
+        the node is a core, and cores if the node is a hyperedge.
         """
         if names_only:
             return tuple(self.tn.G.adj[self.name])
@@ -94,319 +70,178 @@ class Node:
     def __repr__(self):
         node_class = "Core" if self.is_core else "Hyperedge"
         return (
-            f"'{node_class}(name={self.name}, degree={self.degree}, "
-            f"neighbors={self.neighbors}, attr_dict={self.dict})'"
+            f"'{node_class}(name={self.name}, nx_degree={self.degree}, "
+            f"nx_neighbors={self.neighbors}, attr_dict={self.dict})'"
         )
 
     def __str__(self):
         node_class = "Core" if self.is_core else "Hyperedge"
-        return f"{node_class}(name={self.name}, degree={self.degree})"
+        return f"{node_class}(name={self.name})"
 
 
 class Core(Node):
     """
-    General tensor core, whose data is structured as one of several core types
+    General tensor core, which can be contracted with other cores
+
+    The core that is returned is unconnected to any other cores, and has a
+    degree-1 hyperedge ("dangler") attached to each mode of the tensor. The
+    only exception is for copy tensors, which are attached to a single
+    degree-n hyperedge.
     """
 
-    def __init__(self, parent_tn, node_type, nx_name, edge_symbols, **kwargs):
+    # Used to store the template tensors the user has defined
+    _template_dict = {}
 
-        # Keep in mind that most attributes of a Node are derived from the
-        # dictionary stored in the associated NX node, so these shouldn't be
-        # used until after initialization is completed.
+    def __init__(self, parent_tn, name, core_type, edge_symbols, **kwargs):
+        # Check input, setup NX structure and basic attributes
+        super().__init__(name, parent_tn, True)
+        check_core_args(core_type, kwargs)
+        self.dict["core_type"] = core_type
+        for s in edge_symbols:
+            assert_valid_symbol(s)
+        assert len(set(edge_symbols)) == len(edge_symbols)
+        self.dict["edge_symbols"] = tuple(edge_symbols)
 
-        check_node_args(node_type, kwargs)
-        assert nx_name in parent_tn.G
-        n_edges = len(edge_symbols)
-        self.tn = parent_tn
-        self.name = nx_name
-        self.dict["node_type"] = node_type
-        # Ordered list of edge names which gets populated by end of init
-        self.dict["edge_names"] = [None] * n_edges
+        # Initialization specific to different core types
+        if core_type == "dense":
+            self.dict["tensor"] = kwargs.pop("tensor")
+            assert_valid_tensor(self.tensor)
+            assert self.tensor.ndim == len(edge_symbols)
+            shape = self.tensor.shape
 
-        # List of NX edges is needed to order edges (they're unordered in NX)
-        if node_type == "hyper":
-            assert len(set(edge_symbols)) == 1
+        elif core_type == "template":
+            t_name = kwargs.pop("template_name")
+            # Initialize tensor for this template if it hasn't been set yet
+            if t_name not in self._template_dict:
+                assert "tensor" in kwargs
+                self._template_dict[t_name] = kwargs.pop("tensor")
+                assert_valid_tensor(self._template_dict[t_name])
+            self.dict["tensor"] = self._template_dict[t_name]
+            assert self.dict["tensor"].ndim == len(edge_symbols)
+            shape = self.tensor.shape
+
+        elif core_type == "copy":
+            self.dict["degree"] = kwargs.pop("degree")
+            self.dict["dim"] = kwargs.pop("dim")
+            assert self.dict["degree"] >= 1
+            # All edges of copy tensor share the same edge symbol
+            assert len(edge_symbols) == 1
+
+        elif core_type == "input":
+            shape = kwargs.pop("shape")
+            self.dict["shape"] = shape
+            self.dict["shape_guess"] = kwargs.pop("shape_guess")
+            assert len(self.dict["shape_guess"]) == len(shape)
+
+        # Create hyperedges and connect them to modes of the core
+        if core_type != "copy":
+            for d, symb in zip(shape, edge_symbols):
+                Hyperedge(parent_tn, symb, 1, d)
+                # Note that hyperedges are named by their defining edge symbol
+                self.G.add_edge(self.name, symb)
         else:
-            assert len(set(edge_symbols)) == n_edges
-
-        if node_type == "dense":
-            self.dict["tensor"] = kwargs["tensor"]
-            assert n_edges == self.tensor.ndim
-
-        elif node_type == "clone":
-            self.dict["base_node"] = kwargs["base_node"]
-            if not isinstance(self.base_node, Node):
-                self.dict["base_node"] = self.G.nodes[self.base_node]["tn_node"]
-            assert self.base_node.node_type == "dense"
-            assert n_edges == self.base_node.tensor.ndim
-
-        elif node_type == "hyper":
-            self.dict["degree"] = kwargs["degree"]
-            assert self.degree > 0, "Hyperedge nodes must have positive degree"
-            assert n_edges == self.degree
-            self.dict["dim"] = kwargs["dim"] if "dim" in kwargs else None
-            assert isinstance(self.dim, int) or self.dim is None
-
-        elif node_type == "input":
-            self.dict["_shape"] = kwargs["shape"]
-            self.dict["var_axes"] = kwargs["var_axes"]
-            assert n_edges == len(self.dict["_shape"])
-            assert len(set(self.var_axes)) == len(self.var_axes)
-            assert all(0 <= va < n_edges for va in self.var_axes)
-
-        # Make pointer to the Node accessible in networkx node dictionary
-        self.dict["tn_node"] = self
-
-        # Create requisite number of dangling nodes, save list of NX edge ids
-        assert len(self.shape) == len(edge_symbols)
-        if not self.dangler:
-            for i, s in enumerate(edge_symbols):
-                self.dict["edge_names"][i] = self.tn._new_dangler(self, i, s)
-        else:
-            # Don't need to create danglers for danglers, just get edge id
-            assert len(self.G.edges(self.name)) == 0
-            self.dict["edge_names"] = list(self.G.edges(self.name, keys=True))
+            # Although copy tensor has multiple edges, its NX version
+            # only connects to a single hyperedge
+            symb = edge_symbols[0]
+            Hyperedge(parent_tn, symb, self.dict["degree"], self.dict["dim"])
+            self.G.add_edge(self.name, symb)
 
     @property
-    def node_type(self):
+    def core_type(self):
         """
         Type of the node
         """
-        return self.dict["node_type"]
+        return self.dict["core_type"]
 
     @property
-    def dangler(self):
-        return self.node_type == "dangler"
+    def is_dense(self):
+        return self.core_type == "dense"
+
+    @property
+    def is_template(self):
+        return self.core_type == "template"
 
     @property
     def is_copy(self):
-        return self.node_type == "hyper"
+        return self.core_type == "copy"
 
     @property
-    def G(self):
-        """
-        Networkx graph underlying the node's parent TN
-        """
-        return self.tn.G
-
-    @property
-    def edge_names(self):
-        """
-        Ordered list of networkx labels for the edges connected to node
-        """
-        assert edge_set_equality(
-            self.dict["edge_names"], self.G.edges(self.name, keys=True)
-        )
-        return self.dict["edge_names"]
-
-    @property
-    def edges(self):
-        """
-        Ordered list of edge objects for the modes of the underlying tensor
-        """
-        return tuple(self.G.edges[en]["tn_edge"] for en in self.edge_names)
-
-    @property
-    def edge_symbols(self):
-        """
-        Ordered list of symbols associated with modes of the underlying tensor
-        """
-        return tuple(e.symbol for e in self.edges)
-
-    @property
-    def symbol(self):
-        """
-        Return the symbol associated to a dangling node
-
-        Returns an error for standard (non-dangling) nodes, in this case use
-        ``Node.edge_symbols`` instead.
-        """
-        assert self.dangler
-        edge_names = self.G.edges(self.name, data=True)
-        assert len(edge_names) == 1
-        return list(edge_names)[0][2]["symbol"]
-
-    def _dang_name(self, idx):
-        """
-        Returns name of the dangling node at other end of edge at given index
-
-        Raises an error when the other node isn't a dangler
-        """
-        # Pull the corresponding node from the edge name, check it's good
-        edge_name = self.dict["edge_names"][idx]
-        dang_name = opposite_node(edge_name, self.name)
-        assert len(self.G[self.name][dang_name]) == 1  # Dangler has one edge
-        return dang_name
-
-    @property
-    def dict(self):
-        """
-        Attribute dictionary associated with underlying networkx node
-        """
-        return self.G.nodes[self.name]
-
-    @property
-    def ndim(self):
-        """
-        Number of edges of the node, i.e. number of modes of the tensor
-        """
-        ndim = self.G.degree(self.name)
-        assert ndim == len(self.shape)
-        return ndim
-
-    @property
-    def size(self):
-        """
-        Number of elements in the tensor associated with the Node
-
-        Returns None for Nodes whose underlying tensors don't yet have a
-        definite shape. For the literal number of tensor elements stored in
-        memory, use Node.numel.
-        """
-        if self.node_type in ("dense", "clone", "hyper", "input"):
-            bad_shape = any(d < 0 for d in self.shape)
-            return None if bad_shape else prod(self.shape)
-
-    @property
-    def numel(self):
-        """
-        Number of elements stored in memory for the tensor associated with Node
-
-        Similar to Node.size, but returns 0 for any node types besides dense
-        """
-        if self.node_type == "dense":
-            return prod(self.tensor.shape)
-        else:
-            return 0
-
-    @property
-    def shape(self):
-        """
-        Shape of the tensor associated with the node
-
-        Values of -1 in the shape tuple indicate an undertermined dimension
-        """
-        if self.node_type == "dense":
-            return self.tensor.shape
-        elif self.node_type == "clone":
-            return self.base_node.tensor.shape
-        elif self.node_type == "hyper":
-            return (-1 if self.dim is None else self.dim,) * self.degree
-        elif self.node_type == "input":
-            return tuple(
-                -1 if i in self.var_axes else d
-                for i, d in enumerate(self.dict["_shape"])
-            )
-        elif self.dangler:
-            return (-1,)
-
-    @property
-    def tensor(self):
-        """
-        Tensor defining a dense node
-        """
-        if self.node_type != "dense":
-            raise tensor_attr_error(self.name, self.node_type)
-        return self.dict["tensor"]
-
-    @tensor.setter
-    def tensor(self, array):
-        if self.node_type != "dense":
-            raise tensor_attr_error(self.name, self.node_type)
-        assert_valid_tensor(array)
-        assert array.ndim == self.ndim
-        self.dict["tensor"] = array
-
-    @property
-    def base_node(self):
-        """
-        Base node defining a duplicate node
-        """
-        if self.node_type != "clone":
-            raise basenode_attr_error(self.name, self.node_type)
-        return self.dict["base_node"]
-
-    @property
-    def degree(self):
-        """
-        Degree of a copy node
-        """
-        # TODO: This is unnecessary, since this is equivalent to ndim. Perhaps
-        #       make this a pseudonym for ndim?
-        if self.node_type != "hyper":
-            raise degree_attr_error(self.name, self.node_type)
-        return self.dict["degree"]
-
-    @property
-    def dim(self):
-        """
-        Dimension of the edges of a copy node
-        """
-        if self.node_type != "hyper":
-            raise dim_attr_error(self.name, self.node_type)
-        return self.dict["dim"]
-
-    @property
-    def var_axes(self):
-        """
-        Index numbers of the axes of an input tensor that aren't yet specified
-        """
-        if self.node_type != "input":
-            raise varaxes_attr_error(self.name, self.node_type)
-        return self.dict["var_axes"]
-
-    @property
-    def neighbors(self):
-        """
-        Ordered list of nodes which connect to the given node
-
-        Output list is based on the edges of the given node, so that nodes
-        which are connected by multiple edges will be listed multiple times.
-
-        For nodes which have dangling edges, a dangling node is placed in the
-        appropriate spot.
-        """
-        return tuple(
-            self.G.nodes[opposite_node(e, self.name)]["tn_node"]
-            for e in self.edge_names
-        )
-
-    def __getitem__(self, key):
-        return self.G.edges[self.edge_names[key]]["tn_edge"]
-
-    def index(self, edge):
-        """
-        Lookup the index of node associated with given edge
-
-        This is the inverse operation to ``self.__getitem__``, meaning that
-        ``node.index(node[i]) == i`` and ``node[node.index(e)] == e``,
-        for all indices i of the node and edges e incident to the node.
-        """
-        if isinstance(edge, Edge):
-            edge = edge.name
-        edge_names = self.edge_names
-        assert edge in edge_names
-        return edge_names.index(edge)
-
-    def __repr__(self):
-        return f"Node(name={self.name}, node_type={self.node_type}, degree={self.ndim})"
+    def is_input(self):
+        return self.core_type == "input"
 
 
-def check_node_args(node_type, kwdict):
+def check_core_args(core_type, kwdict):
     """
-    Ensure input arguments in kwdict are valid for type of node
+    Ensure input arguments in kwdict are valid for given type of core
     """
-    assert node_type in NODE_ARGS  # TODO: Replace with actual error message
-    mand_args, opt_args = NODE_ARGS[node_type]
+    if core_type not in _CORE_ARGS:
+        raise ValueError(f"Unknown core type '{core_type}'")
+    mand_args, opt_args = _CORE_ARGS[core_type]
     all_args = mand_args.union(opt_args)
     arg_set = set(kwdict.keys())
     if not arg_set.issuperset(mand_args):
         bad_arg = mand_args.difference(arg_set).pop()
         raise TypeError(
-            f"Argument '{bad_arg}' missing, needed for node_type '{node_type}'"
+            f"Argument '{bad_arg}' missing, needed for core type '{core_type}'"
         )
     if not all_args.issuperset(arg_set):
         bad_arg = arg_set.difference(all_args).pop()
         raise TypeError(
-            f"Argument '{bad_arg}' not recognized for node_type '{node_type}'"
+            f"Argument '{bad_arg}' not recognized for core type '{core_type}'"
         )
+
+
+# Mandatory and optional info for each currently supported core type
+_CORE_ARGS = {
+    "dense": (
+        {"tensor"},
+        set(),
+    ),
+    "template": (
+        {"template_name"},
+        {"tensor"},
+    ),
+    "copy": (
+        {"degree", "dim"},
+        set(),
+    ),
+    "input": (
+        {"shape", "shape_guess"},
+        set(),
+    ),
+}
+
+
+class Hyperedge(Node):
+    """
+    General hyperedge, which connects tensor cores together
+    """
+
+    def __init__(self, parent_tn, symbol, degree, dim):
+        # Setup basic attributes
+        super().__init__(symbol, parent_tn, False)
+        self.dict["degree"] = degree
+        self.dict["dim"] = dim
+
+    @property
+    def symbol(self):
+        """
+        The symbol defining the hyperedge, which is also its NetworkX name
+        """
+        return self.name
+
+    @property
+    def degree(self):
+        return self.dict["degree"]
+
+    @property
+    def dangler(self):
+        return self.dict["degree"] == 1
+
+    @property
+    def proper_edge(self):
+        return self.dict["degree"] == 2
+
+    @property
+    def proper_hyperedge(self):
+        return self.dict["degree"] > 2

@@ -1,44 +1,50 @@
 """Miscellaneous helper functions"""
-from functools import lru_cache, partial
+import operator
+from functools import lru_cache, partial, reduce
 
 import opt_einsum as oe
 
 
-def assert_valid_tensor(tensor):
+def prod(numbers):
+    """
+    Compute product of numbers in list (for compatibility with Python <= 3.7)
+    """
+    return reduce(operator.mul, numbers, 1)
+
+
+def is_valid_tensor(tensor):
     """
     Check if a user-specified tensor can be used as core tensor data
     """
-    assert hasattr(tensor, "ndim")
-    assert hasattr(tensor, "shape")
+    return hasattr(tensor, "ndim") and hasattr(tensor, "shape")
 
 
-def assert_valid_symbol(symbol):
+def is_valid_symbol(symbol):
     """
     Check if a user-specified symbol is a valid symbol
     """
-    assert isinstance(symbol, str)
-    assert len(symbol) == 1
+    return isinstance(symbol, str) and len(symbol) == 1 and not symbol.isdigit()
 
 
-def edge_set_equality(edgeset1, edgeset2):
-    """
-    Returns whether two edge sets are equal
-    """
-    es1, es2 = set(edgeset1), set(edgeset2)
-    union = es1 | es2
-    if len(union) == 0:
-        return True
-    assert set(len(t) for t in union) in ({2}, {3})
-    multiset = len(union.pop()) == 3
+# def edge_set_equality(edgeset1, edgeset2):
+#     """
+#     Returns whether two edge sets are equal
+#     """
+#     es1, es2 = set(edgeset1), set(edgeset2)
+#     union = es1 | es2
+#     if len(union) == 0:
+#         return True
+#     assert set(len(t) for t in union) in ({2}, {3})
+#     multiset = len(union.pop()) == 3
 
-    # Order the node labels before comparing, since all graphs are undirected
-    if multiset:
-        es1 = [tuple(sorted(e[:2])) + e[2:] for e in es1]
-        es2 = [tuple(sorted(e[:2])) + e[2:] for e in es2]
-    else:
-        es1 = [tuple(sorted(e)) for e in es1]
-        es2 = [tuple(sorted(e)) for e in es2]
-    return sorted(es1) == sorted(es2)
+#     # Order the node labels before comparing, since all graphs are undirected
+#     if multiset:
+#         es1 = [tuple(sorted(e[:2])) + e[2:] for e in es1]
+#         es2 = [tuple(sorted(e[:2])) + e[2:] for e in es2]
+#     else:
+#         es1 = [tuple(sorted(e)) for e in es1]
+#         es2 = [tuple(sorted(e)) for e in es2]
+#     return sorted(es1) == sorted(es2)
 
 
 def get_new_symbols(old_symbols, num_new):
@@ -101,11 +107,16 @@ def opposite_node(edge_id, node):
     return edge_id[(node_idx + 1) % 2]
 
 
-tensor_attr_error = partial(node_specific_attr_error, "dense", "tensor")
-basenode_attr_error = partial(node_specific_attr_error, "clone", "base_node")
-degree_attr_error = partial(node_specific_attr_error, "hyper", "degree")
-dim_attr_error = partial(node_specific_attr_error, "hyper", "dim")
-varaxes_attr_error = partial(node_specific_attr_error, "input", "var_axes")
+tensor_attr_error = partial(node_specific_attr_error, "dense and template", "tensor")
+template_name_attr_error = partial(
+    node_specific_attr_error, "template", "template_name"
+)
+change_template_attr_error = partial(
+    node_specific_attr_error, "template", "change_template"
+)
+dim_attr_error = partial(node_specific_attr_error, "copy", "dim")
+# degree_attr_error = partial(node_specific_attr_error, "copy", "degree")
+# varaxes_attr_error = partial(node_specific_attr_error, "input", "var_axes")
 
 
 full_node_names = {

@@ -47,25 +47,35 @@ def is_valid_symbol(symbol):
 #     return sorted(es1) == sorted(es2)
 
 
+def get_new_numbers(old_nums, num_new):
+    """
+    Find new numbers to use for cores of a TN
+    """
+    num_old = len(old_nums)
+    assert min(old_nums) >= 0
+    assert len(set(old_nums)) == num_old
+    assert all(isinstance(n, int) for n in old_nums)
+    max_num = -1 if num_old == 0 else max(old_nums)
+    num_gaps = 1 + max_num - num_old
+
+    # Get new numbers lying in gaps between old numbers first
+    if num_gaps == 0:
+        new_nums = []
+    else:
+        new_nums = [i for i in range(max_num) if i not in old_nums][:num_new]
+    if len(new_nums) < num_new:
+        new_nums.extend(range(max_num + 1, max_num + 1 + (num_new - num_gaps)))
+    assert len(new_nums) == num_new
+
+    return tuple(new_nums)
+
+
 def get_new_symbols(old_symbols, num_new):
     """
-    Find new opt_einsum symbols to use for edges of a TN
+    Find new opt_einsum symbols to use for variables of a TN
     """
-    num_symbols = len(old_symbols)
-    assert len(set(old_symbols)) == num_symbols
-    old_idxs = {symbol_idx(s) for s in old_symbols}
-    max_idx = -1 if num_symbols == 0 else max(old_idxs)
-    num_gaps = 1 + max_idx - num_symbols
-
-    # Get new symbols lying in gaps between old symbols first
-    if num_gaps == 0:
-        new_idxs = []
-    else:
-        new_idxs = [i for i in range(max_idx) if i not in old_idxs][:num_new]
-    if len(new_idxs) < num_new:
-        new_idxs.extend(range(max_idx + 1, max_idx + 1 + (num_new - num_gaps)))
-    assert len(new_idxs) == num_new
-
+    old_idxs = [symbol_idx(s) for s in old_symbols]
+    new_idxs = get_new_numbers(old_idxs, num_new)
     return tuple(oe.get_symbol(idx) for idx in new_idxs)
 
 

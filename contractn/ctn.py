@@ -2,56 +2,60 @@ from collections import Counter
 
 import networkx as nx
 
-from .nodes import Node
-from .edges import Edge
+from .nodes import Core, Variable
+
+# from .edges import Edge
 from .einsum import make_einstring, make_arg_packer, contract
 from .utils import assert_valid_tensor, assert_valid_symbol, get_new_symbols
+
+# Attributes which all TNs possess, with default values for initialization
+DEFAULT_TN_ATTRS = {
+    "template_dict": {},
+    "AUTOMERGE_COPY_NODES": False,
+}
 
 
 class TN:
     """
-    Generic tensor networks which supports copy nodes and weight sharing
+    General graph-centric tensor network supporting various classes of cores
     """
 
     def __init__(self):
-        self.G = nx.MultiGraph()
-        self._dang_id = 0
+        self.G = nx.Graph(**DEFAULT_TN_ATTRS)
 
-    def _init_node(self, node_type, name, edge_symbols, **kwargs):
+    @property
+    def dict(self):
         """
-        Create a new unconnected Node object and add it to the tensor network
-
-        This entails adding several Nodes, one for the Node we actually care
-        about, and one dangling node for each edge of the Node we care about.
-
-        Returns an error if used to create a dangling node
+        Attribute dict for the NetworkX graph
         """
-        # Check that the name isn't currently used, create node in NX
-        name = self._new_node_name(name)
-        assert node_type != "dangler"
-        self.G.add_node(name)
+        return self.G.graph
 
-        # Create the Node object of interest, along with dangling nodes and edges
-        node = Node(self, node_type, name, edge_symbols, **kwargs)
-
-        return node
-
-    def _new_dangler(self, parent, idx, edge_symbol):
+    @property
+    def cores(self):
         """
-        Add a dangler node connected to a non-dangler parent node
+        List of all cores in the tensor network, in the order they were added
         """
-        # Add the node to NX
-        nx_id = f"_dangler_{self._dang_id}"
-        assert nx_id not in self.G
-        assert parent.name in self.G
-        self.G.add_node(nx_id)
-        self._dang_id += 1
+        return tuple(
+            d["node"] for n, d in self.G.nodes(data=True) if bool(d["bipartite"])
+        )
 
-        # Create Node object, which is added to NX dangler node
-        node = Node(self, "dangler", nx_id, (edge_symbol,))
+    @property
+    def variables(self):
+        """
+        List of all variables in the tensor network, in the order they were added
+        """
+        return tuple(
+            d["node"] for n, d in self.G.nodes(data=True) if not bool(d["bipartite"])
+        )
 
-        # Create an edge between dangler and parent node
-        return self._init_edge(parent, node, idx, 0, edge_symbol)
+    def add_bond(self, core1, core2, mode1, mode2):
+        """
+        Connect a pair of cores along a desired pair of modes
+        """
+        assert isinstance(core1, Core)
+        assert isinstance(core2, Core)
+        assert isinstance(mode1, (int, str, Variable))
+        assert isinstance(mode2, (int, str, Variable))
 
     def _init_edge(self, node1, node2, idx1, idx2, edge_symbol):
         """

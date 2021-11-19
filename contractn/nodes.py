@@ -85,10 +85,6 @@ class Core(Node):
     degree-n variable.
     """
 
-    # Used to store the template tensors the user has defined
-    # TODO: Replace this with something living in state dict of the TN class
-    _template_dict = {}
-
     def __init__(self, parent_tn, name, core_type, var_list, **kwargs):
         # Check input, setup NX structure and basic attributes
         super().__init__(name, parent_tn, True)
@@ -109,8 +105,10 @@ class Core(Node):
         elif core_type == "template":
             self.dict["t_name"] = kwargs.pop("template_name")
             # Initialize tensor for this template if it hasn't been set yet
-            if self.dict["t_name"] not in self._template_dict:
-                self._template_dict[self.dict["t_name"]] = kwargs.pop("tensor")
+            if self.dict["t_name"] not in self.tn.dict["template_dict"]:
+                self.tn.dict["template_dict"][self.dict["t_name"]] = kwargs.pop(
+                    "tensor"
+                )
                 assert is_valid_tensor(self.tensor)
             assert self.tensor.ndim == len(var_list)
 
@@ -150,7 +148,7 @@ class Core(Node):
         if self.is_dense:
             return self.dict["tensor"]
         elif self.is_template:
-            return self._template_dict[self.dict["t_name"]]
+            return self.tn.dict["template_dict"][self.dict["t_name"]]
         else:
             raise tensor_attr_error(self.name, self.core_type)
 
@@ -166,7 +164,7 @@ class Core(Node):
                 f"of type '{self.template_name}'. You are encouraged to use "
                 "`Core.change_template` for this purpose instead."
             )
-            self._template_dict[self.dict["t_name"]] = array
+            self.tn.dict["template_dict"][self.dict["t_name"]] = array
         else:
             raise tensor_attr_error(self.name, self.core_type)
 
@@ -273,7 +271,7 @@ class Core(Node):
         assert array.ndim == self.ndim
         if not self.is_template:
             raise change_template_attr_error(self.name, self.core_type)
-        self._template_dict[self.dict["t_name"]] = array
+        self.tn.dict["template_dict"][self.dict["t_name"]] = array
 
     @property
     def dim(self):
@@ -321,15 +319,24 @@ class Core(Node):
 
     def __getitem__(self, key):
         """
-        Given an integer index, this gives the variable symbol for that mode.
-        Given a variable symbol, this gives the integer index of the associated mode.
+        Given an integer index, this gives the Variable object for that mode.
+        Given a variable symbol or Variable object, this gives the integer
+        index of the associated mode.
         """
-        assert isinstance(key, (int, str))
+        assert isinstance(key, (int, str, Variable))
         if isinstance(key, int):
-            return self.dict["var_list"][key]
-        else:
-            assert is_valid_symbol(key)
-            return self.dict["var_list"].index(key)
+            return self.G.nodes[self.dict["var_list"][key]]["node"]
+        if isinstance(key, Variable):
+            key = Variable
+
+        # Case of input Variable or symbol
+        assert is_valid_symbol(key)
+        if key not in self.dict["var_list"]:
+            raise ValueError(
+                f"Attempted to index with '{key}', which isn't "
+                f"a variable of Core_{self.name}"
+            )
+        return self.dict["var_list"].index(key)
 
     def __repr__(self):
         return f"'Core_{self.name}(type={self.core_type}, shape={self.shape})'"
@@ -399,9 +406,9 @@ class Variable(Node):
         """
         The dimension associated with a variable
         """
-        my_dim = self.dict["dim"]
-        assert my_dim is None or isinstance(my_dim, int)
-        return my_dim if my_dim is not None else -1
+        dim = self.dict["dim"]
+        assert dim is None or isinstance(dim, int)
+        return dim if dim is not None else -1
 
     @property
     def is_copyable(self):
